@@ -1,0 +1,52 @@
+MIXER ARCHITECTURE COMPARISON: COINJOIN VS. PERIODIC POOL
+
+1. SIMPLE COINJOIN-LIKE AGGREGATION
+-----------------------------------
+Explanation: 
+Multiple users (e.g., 5-10) collaborate to build a single transaction together. Each user provides one input and one output (to a fresh stealth address). The transaction only becomes valid when all users have signed it. The 'mix' happens atomically on-chain in one block.
+
+Advantages:
+- Atomic: Either everyone mixes or no one does. No funds are ever "stuck" in a contract.
+- Minimal Risk: Users never lose control of their funds until the moment the mix is successful.
+- Privacy: High immediate privacy; even the blockchain observer cannot link inputs to outputs within that transaction.
+
+Disadvantages:
+- Synchronization: All participants must be online at the same time to sign the transaction.
+- Scale: Harder to scale to hundreds of participants in a single transaction due to coordination overhead.
+
+2. COMPLEX PERIODIC POOL (DEPOSIT/WITHDRAW MODEL)
+--------------------------------------------------
+Explanation: 
+Users deposit funds into a "Pool" smart contract at any time. Periodically (e.g., every hour or when 100 deposits are reached), a special transaction triggers a "Mix" that moves funds from the pool to a set of outputs. Users then withdraw their funds later using a secret.
+
+Advantages:
+- Asynchronous: Users don't need to be online at the same time. You can deposit now and withdraw tomorrow.
+- Larger Anonymity Set: Can theoretically support thousands of participants over time.
+
+Disadvantages:
+- High Complexity: Requires managing an on-chain state of "unspent commitments" to prevent double-spending.
+- Potential for "Stuck" Funds: If the mixing trigger fails or the pool is under-utilized, your funds could stay in the pool longer than expected.
+
+--------------------------------------------------
+WHICH ONE FOR OUR PROJECT?
+--------------------------------------------------
+We are building the COINJOIN-LIKE AGGREGATION. 
+Why? Because it aligns perfectly with Obscell's Confidential Token (CT) design. Obscell already supports multi-input/multi-output transactions where sums are verified. By enforcing "Fixed Denominations" (e.g., all outputs = 100 CT), we achieve high privacy with much less technical risk than a global pool contract.
+
+--------------------------------------------------
+SECURITY VULNERABILITIES & BREACHES
+--------------------------------------------------
+1. Simple CoinJoin (Vulnerable to "Denial of Service"): 
+A malicious user can join a CoinJoin session and refuse to sign at the last second, preventing others from mixing. 
+
+HOW FUNDS ARE 'REVERSED': 
+In a CoinJoin, funds are NEVER actually stuck on-chain. Since the transaction requires ALL signatures to be valid, if one person refuses to sign, the transaction is simply REJECTED by the blockchain. 
+- RESULT: Your funds remain in your original wallet. They never left. 
+- RECOVERY: The 'reversal' is automatic. You can immediately try a new mixing session with different participants. The only thing lost is the few minutes spent waiting.
+- SESSION TIMEOUT FIX: To avoid long delays when a malicious user refuses to sign, the protocol implements a strict session timeout. If a participant fails to sign within the designated time limit, the mixer immediately marks the session as ABORTED. The malicious user is dropped, and honest users are instantly free to join a new pool.
+
+2. Complex Periodic Pool (Vulnerable to "Smart Contract Bugs"):
+This is the more DANGEROUS one. Since funds are held in a global contract, a single bug in the "Withdraw" logic or the "Zero-Knowledge" verification could allow an attacker to drain the entire pool. Many historical mixer hacks (like those on other chains) happened because of pool contract vulnerabilities.
+
+SUMMARY: 
+The CoinJoin approach (which we are using) is "Self-Custodial Privacy." It is safer for the user and easier to build securely on CKB. The "delay" from malicious users is minimized by our strict session timeout mechanism: unresponsive users are instantly kicked, breaking no funds and allowing an immediate retry.
