@@ -1,0 +1,14 @@
+[package]
+name = "mixer-pool-type"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ckb-std = "1.0"
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc"] }
+bulletproofs = { git = "https://github.com/zkcrypto/bulletproofs", default-features = false }
+merlin = { version = "3", default-features = false }
+rand_core = "0.6"
+
+[features]
+library = []

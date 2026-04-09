@@ -1,73 +1,49 @@
 # CKB Privacy Mixer 🛡️
 
-A trustless, self-custodial CoinJoin-like protocol built on the **Nervos CKB** blockchain. It leverages the [Obscell](https://github.com/quake/obscell) privacy infrastructure to break the on-chain link between senders and receivers.
+A standalone, trustless CoinJoin-like protocol built on the **Nervos CKB** testnet. It leverages the existing deployed [Obscell](https://github.com/quake/obscell) privacy infrastructure to break the on-chain link between senders and receivers.
 
-## Overview
+## Project Architecture
 
-The CKB Privacy Mixer solves on-chain traceability by grouping multiple users' transactions into a single, cohesive block. When observers look at the blockchain, they see multiple deposits and withdrawals occurring simultaneously, making it practically impossible to determine which withdrawal corresponds to which deposit.
+This repository contains the unique logic required for the mixer operation:
+1. **`contracts/`**: The Rust smart contract (`mixer-pool-type`) that verifies CoinJoin invariants (fixed denominations, anonymity sets). 
+2. **`mixer-sdk/`**: A TypeScript protocol SDK for negotiating mixer sessions and building transactions.
+3. **`frontend/`**: The React/Vite web interface.
+4. **`tests/`**: Simulated integration tests using `ckb-testtool`.
 
-### Key Features
-- **CoinJoin Aggregation:** Uses an atomic transaction model where multiple inputs and multiple outputs are signed together. No smart contract ever takes custody of user funds. 
-- **Fixed Denominations:** The pool strictly requires deposits and withdrawals of exactly `100 CT` tokens. This enforced uniformity is what provides the anonymity set—no unique amounts can be traced.
-- **Obscell Foundation:** We build heavily upon the existing Obscell smart contracts:
-  - **Stealth Addresses:** Withdrawals go to one-time stealth addresses (`stealth-lock`), hiding the true receiver.
-  - **Pedersen Commitments:** Token amounts are hidden on-chain using commitments (`C = a * G + r * H`).
-  - **Bulletproofs:** Zero-knowledge range proofs ensure no tokens are secretly minted or destroyed during transfers.
-- **Anti-DoS Protection:** The coordination layer implements a strict 5-minute timeout. If a malicious participant joins but refuses to sign, the session automatically aborts. Because it's a self-custodial atomic transaction, everyone's funds remain instantly unlocked in their own wallets.
+> [!IMPORTANT]
+> **No Obscell Source Code:** This project operates strictly as a consumer of Obscell. It does *not* include the source code for stealth addresses (`stealth-lock`), confidential tokens (`ct-token-type`), or info cells (`ct-info-type`). Instead, it references their officially deployed **testnet addresses** dynamically. 
 
----
+## Obtaining Obscell Contract Addresses
 
-## How It's Built
+Before deploying or running live scripts, you must configure your `.env` file with Obscell's deployed Testnet pointers.
+1. Copy `.env.example` to `.env`.
+2. Locate the official testnet deployment hashes from the [Obscell repository documentation](https://github.com/quake/obscell).
+3. Fill in the `STEALTH_LOCK_CODE_HASH`, `CT_TOKEN_TYPE_CODE_HASH`, and `CT_INFO_TYPE_CODE_HASH` variables.
 
-The project follows a multi-phase implementation architecture, comprising both Rust-based RISC-V smart contracts (for the CKB-VM) and a TypeScript-based coordination layer. 
+## Building and Deploying the Mixer Contract
 
-### Phase 1: Groundwork & Research
-- Analyzed the foundational Obscell contracts (`stealth-lock`, `ct-info-type`, `ct-token-type`).
-- Designed the overarching architecture that marries Obscell's cryptography with a strict CoinJoin protocol.
+To compile the `mixer-pool-type` RISC-V binary, you need Rust configured for the CKB target.
 
-### Phase 2: The Fixed-Denomination Pool
-- **Rust Smart Contract (`mixer-pool-type`)**: A `#![no_std]` script that validates the CoinJoin. It ensures that input token counts match output token counts, every input and output is *exactly* `100 CT` using Pedersen commitment verification, verifies all outputs are locked with the `stealth-lock`, and enforces a minimum anonymity set (e.g., 3 participants).
-- **TypeScript Coordination (`mixer-sdk`)**: A queue management class `MixSession` that matches users looking to mix `100 CT`. It aggregates their inputs and stealth outputs, orchestrates the signing, and handles the timeout conditions if peers go unresponsive.
-- **Testing**: Includes simulated scenarios directly verifying transaction validity through `ckb-testtool` context and local devnet typescript scripts.
+```bash
+# Compile contracts for CKB RISC-V target
+make build-contracts
+```
+Once compiled (the binary will be in `contracts/target/riscv64imac-unknown-none-elf/release/mixer-pool-type`), deploy it to the testnet using a standard CKB deployment tool (like CKB-CLI or Lumos) and record its `TX_HASH` and `CODE_HASH` in your `.env` file.
 
-*(Future phases will implement true on-chain double-spend nullifiers and ZK Merkle Proof integration for advanced Periodic-Pool models).*
+## Running Tests
 
----
+Tests use `ckb-testtool` to mock the CKB environment locally and verify our contract logic against mocked Obscell primitive responses.
 
-## Repository Structure
-
-```text
-├── contracts/
-│   └── mixer-pool-type/      # Phase 2 Rust Smart Contract verifying the CoinJoin constraints
-├── mixer-sdk/
-│   └── src/                  # TypeScript logic for session coordination and deposit operations
-├── obscell-source/           # Git submodule / cloned workspace of the Obscell base primitives
-├── scripts/
-│   └── mix.ts                # Runnable simulation script demonstrating the flow
-├── tests/
-│   └── src/pool_tests.rs     # ckb-testtool integration tests
-├── src/                      # Frontend UI components (React/Vite)
-└── README.md
+```bash
+# Run Rust smart contract integration tests
+make test-contracts
 ```
 
-## Getting Started
-
-### Prerequisites
-- Node.js (v18+)
-- Rust (with `riscv64imac-unknown-none-elf` target)
-- `ckb-std` v0.16 build environment
-
-### Running the SDK Simulation
-
-To see the mixer coordination in action:
+To test the typescript SDK logic locally:
 ```bash
-# Run the mock multi-party join script
+# Install dependencies
+pnpm install
+
+# Run SDK Simulation
 npx tsx scripts/mix.ts
-```
-
-### Running Smart Contract Tests
-The Rust tests utilize `ckb-testtool` to run the smart contracts through a virtual CKB-VM.
-```bash
-cd obscell-source
-cargo test --package tests --test pool_tests
 ```
