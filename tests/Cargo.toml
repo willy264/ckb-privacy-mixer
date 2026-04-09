@@ -1,0 +1,9 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ckb-testtool = "1.0"
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc"] }
+bulletproofs = { git = "https://github.com/zkcrypto/bulletproofs", default-features = false }

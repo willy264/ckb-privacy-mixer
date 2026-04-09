@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 mixer-sdk/
+obscell-source/
+
+
+mixer_comparison.txt
 
 # Build output
 dist/
