@@ -1,17 +1,20 @@
 # Dependencies
 node_modules/
-mixer-sdk/
-obscell-source/
 
-
-mixer_comparison.txt
-
-# Build output
+# Frontend build output
 dist/
 dist-ssr/
 coverage/
 *.tsbuildinfo
 .vite/
+
+# Rust / CKB build artifacts
+target/
+contracts/target/
+tests-target/
+build/
+tests/failed_txs/
+*.profraw
 
 # Environment files
 .env
@@ -34,6 +37,11 @@ Thumbs.db
 
 # Local tool caches
 .eslintcache
+.worktrees/
 
-# Embedded repo
+# Local-only files
+mixer_comparison.txt
+vendor/
+
+# Embedded external repo
 obscell-source/

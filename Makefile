@@ -1,7 +1,7 @@
 .PHONY: build-contracts test-contracts
 
 build-contracts:
-	cd contracts && cargo build --release --target riscv64imac-unknown-none-elf
+	cargo build --locked --release --target riscv64imac-unknown-none-elf -p mixer-pool-type --target-dir contracts/target
 
-test-contracts:
-	cd tests && cargo test
+test-contracts: build-contracts
+	cargo test --locked -p tests

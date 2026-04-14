@@ -2,15 +2,14 @@ use ckb_std::error::SysError;
 
 #[repr(i8)]
 pub enum Error {
-    InvalidDenomination = 1,
+    IndexOutOfBound = 1,
     ItemMissing = 2,
-    InsufficientParticipants = 3,
-    InvalidOutputLock = 4,
-    LengthNotEnough = 5,
-    InputOutputMismatch = 6,
-    IndexOutOfBound = 7,
-    Encoding = 8,
-    CommitmentVerificationFailed = 9,
+    LengthNotEnough = 3,
+    Encoding = 4,
+    InvalidDenomination = 5,
+    InsufficientParticipants = 7,
+    InvalidOutputLock = 8,
+    InputOutputMismatch = 9,
 }
 
 impl From<SysError> for Error {
