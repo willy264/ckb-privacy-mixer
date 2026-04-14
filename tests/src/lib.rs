@@ -1,9 +1,8 @@
 use ckb_testtool::{
+    builtin::ALWAYS_SUCCESS,
     ckb_types::{
         bytes::Bytes,
-        core::TransactionView,
     },
-    context::Context,
 };
 use std::env;
 use std::fs;
@@ -16,7 +15,7 @@ pub struct Loader(PathBuf);
 
 impl Default for Loader {
     fn default() -> Self {
-        let mut base_path = match env::var("TOP") {
+        let base_path = match env::var("TOP") {
             Ok(val) => {
                 let mut base_path: PathBuf = val.into();
                 base_path.push("contracts");
@@ -39,13 +38,20 @@ impl Loader {
     pub fn load_binary(&self, name: &str) -> Bytes {
         let mut path = self.0.clone();
         path.push(name);
-        
-        // Return dummy bytes if not found during dev testing, or let it fail
-        let result = fs::read(&path);
-        if result.is_err() {
-            println!("Warning: Binary {:?} is missing during test context loading. Expected deployed binary.", path);
-            return Bytes::from(vec![0u8; 100]); // Mock binary for compilation tests
+
+        match fs::read(&path) {
+            Ok(binary) => binary.into(),
+            Err(err) if name == "stealth-lock" => {
+                println!(
+                    "Warning: Binary {:?} is missing during test context loading ({err}). Falling back to ALWAYS_SUCCESS for mocked output locks.",
+                    path
+                );
+                ALWAYS_SUCCESS.clone()
+            }
+            Err(err) => panic!(
+                "Required binary {:?} is missing ({err}). Build the root contract first with `cargo build --release --target riscv64imac-unknown-none-elf -p mixer-pool-type` from the repository root.",
+                path
+            ),
         }
-        result.unwrap().into()
     }
 }
