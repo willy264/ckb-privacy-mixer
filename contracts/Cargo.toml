@@ -1,4 +1,5 @@
 [workspace]
 members = [
-    "mixer-pool-type"
+    "mixer-pool-type",
+    "nullifier-type"
 ]
