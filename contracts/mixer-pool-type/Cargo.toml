@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ckb-std = "1.0"
+ckb-std = "=1.0.2"
 curve25519-dalek = { version = "4", default-features = false, features = ["alloc"] }
 bulletproofs = { git = "https://github.com/zkcrypto/bulletproofs", rev = "04bce4e66013ff857ed462fd4206210544101461", default-features = false }
 merlin = { version = "3", default-features = false }

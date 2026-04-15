@@ -45,3 +45,6 @@ vendor/
 
 # Embedded external repo
 obscell-source/
+
+# Others
+MEMORY.md

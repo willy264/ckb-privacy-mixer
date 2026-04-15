@@ -28,7 +28,7 @@ To compile the `mixer-pool-type` RISC-V binary, you need Rust configured for the
 # Compile contracts for CKB RISC-V target
 make build-contracts
 ```
-Once compiled (the binary will be in `contracts/target/riscv64imac-unknown-none-elf/release/mixer-pool-type`), deploy it to the testnet using a standard CKB deployment tool (like CKB-CLI or Lumos) and record its `TX_HASH` and `CODE_HASH` in your `.env` file.
+Once compiled (the binary will be in `target/riscv64imac-unknown-none-elf/release/mixer-pool-type`), deploy it to the testnet using a standard CKB deployment tool (like CKB-CLI or Lumos) and record its `TX_HASH` and `CODE_HASH` in your `.env` file.
 
 ## Running Tests
 

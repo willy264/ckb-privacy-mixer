@@ -1,2 +1,11 @@
+[build]
+target = "riscv64imac-unknown-none-elf"
+
 [target.riscv64imac-unknown-none-elf]
 rustflags = ["-C", "target-feature=-a"]
+
+[env]
+CLANG = "riscv64-unknown-elf-gcc.exe"
+CC_riscv64imac_unknown_none_elf = "riscv64-unknown-elf-gcc.exe"
+AR_riscv64imac_unknown_none_elf = "riscv64-unknown-elf-ar.exe"
+CFLAGS_riscv64imac_unknown_none_elf = "-march=rv64imc_zba_zbb_zbc_zbs -mabi=lp64"
