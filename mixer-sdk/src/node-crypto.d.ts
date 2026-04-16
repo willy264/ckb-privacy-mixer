@@ -1,10 +1,10 @@
 declare module 'crypto' {
     interface Hash {
-        update(data: string): Hash;
+        update(data: string | Uint8Array): Hash;
         digest(encoding: 'hex'): string;
     }
 
-    interface RandomBytesResult {
+    interface RandomBytesResult extends Uint8Array {
         toString(encoding: 'hex'): string;
     }
 

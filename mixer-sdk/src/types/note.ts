@@ -1,4 +1,6 @@
-﻿/**
+import type { HexString, MerkleProof } from './proof';
+
+/**
  * A deposit note represents the private data a user holds
  * after joining a mix. Used to claim the withdrawal later.
  */
@@ -13,4 +15,14 @@ export interface DepositNote {
     stealthOutputAddress: string;
     /** Unix timestamp when the note was created */
     createdAt: number;
+    /** Mock or real deposit commitment backing this note */
+    commitment?: HexString;
+    /** Deterministic nullifier derived from the note secret */
+    nullifier?: HexString;
+    /** Merkle leaf index once the note is inserted into a tree */
+    leafIndex?: number;
+    /** Merkle root associated with the note at proof generation time */
+    merkleRoot?: HexString;
+    /** Local Phase 4 membership proof scaffold */
+    merkleProof?: MerkleProof;
 }

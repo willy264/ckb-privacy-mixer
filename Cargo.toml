@@ -3,5 +3,6 @@ resolver = "2"
 members = [
     "contracts/mixer-pool-type",
     "contracts/nullifier-type",
+    "contracts/zk-membership-type",
     "tests"
 ]

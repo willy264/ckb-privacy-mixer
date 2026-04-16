@@ -6,6 +6,8 @@ use std::path::PathBuf;
 mod pool_tests;
 #[cfg(test)]
 mod nullifier_tests;
+#[cfg(test)]
+mod zk_membership_tests;
 
 /// Loads binaries needed by tests.
 /// - Our contracts: built into workspace target/ by `cargo build --release --target riscv64imac-unknown-none-elf`

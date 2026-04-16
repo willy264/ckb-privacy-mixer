@@ -7,3 +7,4 @@ edition = "2024"
 ckb-testtool = "1.0"
 curve25519-dalek = { version = "4", default-features = false, features = ["alloc"] }
 bulletproofs = { git = "https://github.com/zkcrypto/bulletproofs", rev = "04bce4e66013ff857ed462fd4206210544101461", default-features = false }
+sha2 = "0.10"
