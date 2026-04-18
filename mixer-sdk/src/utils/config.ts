@@ -1,4 +1,9 @@
-import type { ContractReference, MixerRuntimeConfig, ScriptHashType } from '../types/config';
+import type {
+    ContractReference,
+    MixerRuntimeConfig,
+    RegistryReference,
+    ScriptHashType,
+} from '../types/config';
 
 export interface EnvLike {
     [key: string]: string | undefined;
@@ -37,6 +42,27 @@ function readRequiredContract(env: EnvLike, prefix: string): ContractReference {
     return contract;
 }
 
+function readOptionalRegistry(env: EnvLike): RegistryReference | undefined {
+    const txHash = env.NULLIFIER_REGISTRY_TX_HASH;
+    const index = env.NULLIFIER_REGISTRY_INDEX;
+
+    if (!txHash || !index) {
+        return undefined;
+    }
+
+    return {
+        txHash,
+        index,
+        lock: env.NULLIFIER_REGISTRY_LOCK,
+        capacity: env.NULLIFIER_REGISTRY_CAPACITY,
+        nullifiers: env.NULLIFIER_REGISTRY_NULLIFIERS
+            ? env.NULLIFIER_REGISTRY_NULLIFIERS.split(',')
+                  .map(value => value.trim())
+                  .filter(Boolean)
+            : undefined,
+    };
+}
+
 export function loadMixerRuntimeConfig(env: EnvLike): MixerRuntimeConfig {
     return {
         ckbRpcUrl: requireEnv(env, 'CKB_RPC_URL'),
@@ -47,5 +73,6 @@ export function loadMixerRuntimeConfig(env: EnvLike): MixerRuntimeConfig {
         stealthLock: readRequiredContract(env, 'STEALTH_LOCK'),
         ctTokenType: readRequiredContract(env, 'CT_TOKEN_TYPE'),
         ctInfoType: readOptionalContract(env, 'CT_INFO_TYPE'),
+        nullifierRegistry: readOptionalRegistry(env),
     };
 }

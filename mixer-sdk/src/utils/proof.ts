@@ -90,3 +90,42 @@ export function buildWithdrawalProof(
         proofValid: verifyMerkleProof(proof),
     };
 }
+
+export function reconstructWithdrawalProof(
+    note: DepositNote,
+    denomination: bigint,
+): LocalWithdrawalProofResult {
+    if (!note.commitment) {
+        throw new Error('Deposit note is missing commitment');
+    }
+    if (!note.nullifier) {
+        throw new Error('Deposit note is missing nullifier');
+    }
+    if (!note.merkleRoot) {
+        throw new Error('Deposit note is missing merkleRoot');
+    }
+    if (!note.merkleProof) {
+        throw new Error('Deposit note is missing merkleProof');
+    }
+
+    const publicInputs: WithdrawalPublicInputs = {
+        merkleRoot: note.merkleRoot,
+        nullifier: note.nullifier,
+        denomination,
+        outputStealthAddress: note.stealthOutputAddress,
+    };
+
+    const witnessBundle: WithdrawalWitnessBundle = {
+        commitment: note.commitment,
+        blindingFactor: note.blindingFactor,
+        sessionId: note.sessionId,
+        proof: note.merkleProof,
+    };
+
+    return {
+        publicInputs,
+        witnessBundle,
+        serializedWitness: serializeMembershipWitness(witnessBundle),
+        proofValid: verifyMerkleProof(note.merkleProof),
+    };
+}

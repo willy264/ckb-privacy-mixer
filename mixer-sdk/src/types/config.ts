@@ -8,6 +8,14 @@ export interface ContractReference {
     depType?: 'code' | 'depGroup';
 }
 
+export interface RegistryReference {
+    txHash: string;
+    index: string;
+    lock?: string;
+    capacity?: string;
+    nullifiers?: string[];
+}
+
 export interface MixerRuntimeConfig {
     ckbRpcUrl: string;
     ckbIndexerUrl: string;
@@ -17,4 +25,5 @@ export interface MixerRuntimeConfig {
     stealthLock: ContractReference;
     ctTokenType: ContractReference;
     ctInfoType?: ContractReference;
+    nullifierRegistry?: RegistryReference;
 }

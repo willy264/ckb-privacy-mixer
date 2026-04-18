@@ -4,7 +4,10 @@
  * through the provider/config resolution path.
  * Usage: npx tsx scripts/withdraw.ts
  */
-import { MemoryWithdrawalProvider } from '../mixer-sdk/src/providers/withdrawal';
+import {
+    AggronWithdrawalProvider,
+    MemoryWithdrawalProvider,
+} from '../mixer-sdk/src/providers/withdrawal';
 import { runPhase4Example } from '../mixer-sdk/src/examples/phase4';
 import { loadMixerRuntimeConfig } from '../mixer-sdk/src/utils/config';
 import {
@@ -19,7 +22,7 @@ async function main() {
     console.log('Running live Phase 3 withdrawal transaction simulation...');
 
     const example = runPhase4Example();
-    const config = loadMixerRuntimeConfig({
+    const env = {
         CKB_RPC_URL: process.env.CKB_RPC_URL ?? 'https://testnet.ckb.dev',
         CKB_INDEXER_URL: process.env.CKB_INDEXER_URL ?? 'https://testnet.ckb.dev',
         MIXER_POOL_CODE_HASH: process.env.MIXER_POOL_CODE_HASH ?? '0x' + '1'.repeat(64),
@@ -32,14 +35,13 @@ async function main() {
         STEALTH_LOCK_HASH_TYPE: process.env.STEALTH_LOCK_HASH_TYPE ?? 'type',
         CT_TOKEN_TYPE_CODE_HASH: process.env.CT_TOKEN_TYPE_CODE_HASH ?? '0x' + '5'.repeat(64),
         CT_TOKEN_TYPE_HASH_TYPE: process.env.CT_TOKEN_TYPE_HASH_TYPE ?? 'type',
-    });
-    const registryCell = {
-        outPoint: '0xregistry_cell_001',
-        nullifiers: [],
-        lock: 'always_success',
-        capacity: '1000',
+        NULLIFIER_REGISTRY_TX_HASH: process.env.NULLIFIER_REGISTRY_TX_HASH,
+        NULLIFIER_REGISTRY_INDEX: process.env.NULLIFIER_REGISTRY_INDEX,
+        NULLIFIER_REGISTRY_LOCK: process.env.NULLIFIER_REGISTRY_LOCK,
+        NULLIFIER_REGISTRY_CAPACITY: process.env.NULLIFIER_REGISTRY_CAPACITY,
+        NULLIFIER_REGISTRY_NULLIFIERS: process.env.NULLIFIER_REGISTRY_NULLIFIERS,
     };
-
+    const config = loadMixerRuntimeConfig(env);
     const proof = {
         publicInputs: example.publicInputs,
         witnessBundle: example.witnessBundle,
@@ -47,11 +49,22 @@ async function main() {
         proofValid: example.proofValid,
     };
 
-    const provider = new MemoryWithdrawalProvider({
-        config,
-        registryCell,
-        proof,
-    });
+    const provider =
+        env.NULLIFIER_REGISTRY_TX_HASH && env.NULLIFIER_REGISTRY_INDEX
+            ? new AggronWithdrawalProvider({
+                  config,
+                  denomination: 100n,
+              })
+            : new MemoryWithdrawalProvider({
+                  config,
+                  registryCell: {
+                      outPoint: '0xregistry_cell_001',
+                      nullifiers: [],
+                      lock: 'always_success',
+                      capacity: '1000',
+                  },
+                  proof,
+              });
 
     try {
         const tx = await prepareLiveWithdrawTransaction(example.target, {
@@ -60,6 +73,11 @@ async function main() {
         });
         console.log('Prepared withdrawal transaction:');
         console.log(JSON.stringify(tx, null, 2));
+        console.log(
+            provider instanceof AggronWithdrawalProvider
+                ? 'Using Aggron env-backed provider.'
+                : 'Using memory provider fallback until registry deployment details are set.',
+        );
 
         const txHash = await withdrawMix(example.target, {
             provider,
