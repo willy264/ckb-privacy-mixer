@@ -5,7 +5,7 @@ import type {
     WithdrawalWitnessBundle,
 } from '../types/proof';
 import { deriveNullifier } from './crypto';
-import { concatBytes, hexToBytes, u32LeBytes, utf8ToBytes } from './encoding';
+import { bytesToHex, concatBytes, hexToBytes, u32LeBytes, utf8ToBytes } from './encoding';
 import { generateMerkleProof, verifyMerkleProof } from './merkle';
 
 export interface LocalWithdrawalProofResult {
@@ -41,6 +41,17 @@ export function serializeMembershipWitness(bundle: WithdrawalWitnessBundle): Uin
         ...siblingsBytes,
         pathBytes,
     );
+}
+
+export function serializeWithdrawalPublicInputs(publicInputs: WithdrawalPublicInputs): Uint8Array {
+    return concatBytes(
+        hexToBytes(publicInputs.merkleRoot),
+        hexToBytes(publicInputs.nullifier),
+    );
+}
+
+export function serializeWithdrawalPublicInputsHex(publicInputs: WithdrawalPublicInputs): string {
+    return bytesToHex(serializeWithdrawalPublicInputs(publicInputs));
 }
 
 export function buildWithdrawalProof(

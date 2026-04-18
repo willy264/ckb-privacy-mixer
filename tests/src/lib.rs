@@ -8,6 +8,8 @@ mod pool_tests;
 mod nullifier_tests;
 #[cfg(test)]
 mod zk_membership_tests;
+#[cfg(test)]
+mod withdrawal_integration_tests;
 
 /// Loads binaries needed by tests.
 /// - Our contracts: built into workspace target/ by `cargo build --release --target riscv64imac-unknown-none-elf`
