@@ -1,33 +1,74 @@
-﻿/**
+/**
  * deploy.ts
- * Deploys the compiled mixer-pool-type binary to CKB testnet.
- * Run after: make build-contracts
+ * Deploy the local mixer contracts to Aggron using Lumos.
  * Usage: npx tsx scripts/deploy.ts
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+    __dirname,
+    deployBinary,
+    initializeAggron,
+    PROJECT_ROOT,
+    requiredEnv,
+} from './lumos-common';
 
-async function deploy() {
-    const binaryPath = path.resolve(
-        __dirname,
-        '../contracts/target/riscv64imac-unknown-none-elf/release/mixer-pool-type'
-    );
-
-    if (!fs.existsSync(binaryPath)) {
-        console.error('ERROR: Contract binary not found. Run `make build-contracts` first.');
-        process.exit(1);
-    }
-
-    const binary = fs.readFileSync(binaryPath);
-    console.log(`Loaded binary: ${binary.length} bytes`);
-    console.log('');
-    console.log('In a real deployment you would:');
-    console.log('  1. Connect to CKB testnet via CKB_RPC_URL from .env');
-    console.log('  2. Build a deploy transaction that puts the binary in a cell');
-    console.log('  3. Sign and submit the transaction using OWNER_PRIVATE_KEY');
-    console.log('  4. Record the TX_HASH and CODE_HASH in your .env file');
-    console.log('');
-    console.log('Use ckb-cli or Lumos to perform the actual deployment.');
+interface DeployTarget {
+    envPrefix: string;
+    name: string;
+    path: string;
 }
 
-deploy().catch(console.error);
+async function main() {
+    initializeAggron();
+
+    const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
+    const releaseDir = path.resolve(PROJECT_ROOT, 'target/riscv64imac-unknown-none-elf/release');
+
+    const targets: DeployTarget[] = [
+        {
+            envPrefix: 'MIXER_POOL',
+            name: 'mixer-pool-type',
+            path: path.join(releaseDir, 'mixer-pool-type'),
+        },
+        {
+            envPrefix: 'NULLIFIER_TYPE',
+            name: 'nullifier-type',
+            path: path.join(releaseDir, 'nullifier-type'),
+        },
+        {
+            envPrefix: 'ZK_MEMBERSHIP_TYPE',
+            name: 'zk-membership-type',
+            path: path.join(releaseDir, 'zk-membership-type'),
+        },
+    ];
+
+    console.log('=== Aggron Contract Deployment (Lumos) ===');
+    const results: Record<string, { txHash: string; index: string; codeHash: string }> = {};
+
+    for (const target of targets) {
+        const result = await deployBinary(target.path, privateKey, target.name);
+        results[target.envPrefix] = result;
+    }
+
+    const resultsPath = path.resolve(__dirname, 'deployment_results.json');
+    fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
+
+    console.log('');
+    console.log('=== Deployment Summary ===');
+    for (const target of targets) {
+        const result = results[target.envPrefix];
+        console.log(`${target.name}`);
+        console.log(`  ${target.envPrefix}_TX_HASH=${result.txHash}`);
+        console.log(`  ${target.envPrefix}_INDEX=${result.index}`);
+        console.log(`  ${target.envPrefix}_CODE_HASH=${result.codeHash}`);
+        console.log(`  ${target.envPrefix}_HASH_TYPE=data1`);
+        console.log('');
+    }
+    console.log(`Saved raw results to ${resultsPath}`);
+}
+
+main().catch(err => {
+    console.error('Deployment failed:', err?.message || err);
+    process.exit(1);
+});

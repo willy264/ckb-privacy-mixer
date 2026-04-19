@@ -13,4 +13,5 @@ export * from './utils/config';
 export * from './utils/encoding';
 export * from './utils/merkle';
 export * from './utils/proof';
+export * from './utils/rpc';
 export * from './utils/stealth';

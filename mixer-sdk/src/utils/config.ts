@@ -55,6 +55,7 @@ function readOptionalRegistry(env: EnvLike): RegistryReference | undefined {
         index,
         lock: env.NULLIFIER_REGISTRY_LOCK,
         capacity: env.NULLIFIER_REGISTRY_CAPACITY,
+        typeArgs: env.NULLIFIER_REGISTRY_TYPE_ARGS,
         nullifiers: env.NULLIFIER_REGISTRY_NULLIFIERS
             ? env.NULLIFIER_REGISTRY_NULLIFIERS.split(',')
                   .map(value => value.trim())

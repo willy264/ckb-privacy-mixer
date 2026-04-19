@@ -14,6 +14,7 @@ export interface RegistryReference {
     lock?: string;
     capacity?: string;
     nullifiers?: string[];
+    typeArgs?: string;
 }
 
 export interface MixerRuntimeConfig {

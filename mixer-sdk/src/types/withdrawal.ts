@@ -9,6 +9,7 @@ export interface NullifierRegistryCell {
     nullifiers: string[];
     lock?: string;
     capacity?: string;
+    typeArgs?: string;
 }
 
 export interface WithdrawalContractRefs {
