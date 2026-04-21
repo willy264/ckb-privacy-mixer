@@ -42,6 +42,7 @@ Thumbs.db
 # Local-only files
 mixer_comparison.txt
 vendor/
+scripts/deployment_results.json
 
 # Embedded external repo
 obscell-source/
