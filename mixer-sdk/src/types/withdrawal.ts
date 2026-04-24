@@ -1,8 +1,18 @@
-import type { DepositNote } from './note';
-import type { ContractReference } from './config';
-import type { WithdrawalPublicInputs } from './proof';
 import type { LocalWithdrawalProofResult } from '../utils/proof';
-import type { LiveWithdrawalProvider } from '../providers/withdrawal';
+import type { DepositNote } from './note';
+import type { ContractReference, MixerRuntimeConfig } from './config';
+import type { WithdrawalPublicInputs } from './proof';
+
+export interface WithdrawalResolution {
+    config: Partial<MixerRuntimeConfig>;
+    registryCell: NullifierRegistryCell;
+    proof: LocalWithdrawalProofResult;
+}
+
+export interface LiveWithdrawalProvider {
+    resolveWithdrawal(note: DepositNote): Promise<WithdrawalResolution>;
+    submitWithdrawal?(tx: WithdrawalTransaction, privateKey?: string): Promise<string>;
+}
 
 export interface NullifierRegistryCell {
     outPoint: string;

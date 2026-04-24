@@ -66,13 +66,19 @@ async function main() {
                   proof,
               });
 
+    const privateKey = process.env.OWNER_PRIVATE_KEY;
+    if (!privateKey) {
+        console.warn('OWNER_PRIVATE_KEY is not set. Run with actual private key to submit to Aggron.');
+    }
+
     try {
         const tx = await prepareLiveWithdrawTransaction(example.target, {
             provider,
-            privateKey: '0xdev_withdraw_key',
+            privateKey: privateKey ?? '0xdev_withdraw_key',
         });
         console.log('Prepared withdrawal transaction:');
-        console.log(JSON.stringify(tx, null, 2));
+        console.log(JSON.stringify(tx, (key, value) => 
+            typeof value === 'bigint' ? value.toString() : value, 2));
         console.log(
             provider instanceof AggronWithdrawalProvider
                 ? 'Using Aggron env-backed provider.'
@@ -81,7 +87,7 @@ async function main() {
 
         const txHash = await withdrawMix(example.target, {
             provider,
-            privateKey: '0xdev_withdraw_key',
+            privateKey: privateKey ?? '0xdev_withdraw_key',
         });
         console.log('Withdrawal submitted:', txHash);
         console.log('Registered nullifiers:', getSpentNullifiers().length);
@@ -89,7 +95,7 @@ async function main() {
         console.log('Replaying the same note to verify double-spend protection...');
         await withdrawMix(example.target, {
             provider,
-            privateKey: '0xdev_withdraw_key',
+            privateKey: privateKey ?? '0xdev_withdraw_key',
         });
     } catch (e: any) {
         console.log(e.message);

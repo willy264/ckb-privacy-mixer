@@ -1,0 +1,17 @@
+{
+  "STEALTH_LOCK": {
+    "txHash": "0x900078c4f19a2cdc6b82abd65d95ce1a67973868db55be4677b034901ad47e30",
+    "index": "0x0",
+    "codeHash": "0xeead24bdc5d23566dcfe2752dfb2d2fc9774481b276a6c1c397f4a62d5b874f3"
+  },
+  "CT_TOKEN_TYPE": {
+    "txHash": "0xc03613579d705f0f40a01073d25560d82253996f676b7f42391f7182b1f2aee0",
+    "index": "0x0",
+    "codeHash": "0x51651d5e008629d5686da57020cc1061b81fde94a9f2bb7316540d9d76dda971"
+  },
+  "CT_INFO_TYPE": {
+    "txHash": "0x992228219838e8789359bf33230a49b83496016acded5d2ec23b4c0d929a5bc1",
+    "index": "0x0",
+    "codeHash": "0x7fa824617bcc333f7c30d3dffe377f300affd236fe0996394a340a45cde37aea"
+  }
+}
