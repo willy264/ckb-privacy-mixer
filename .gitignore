@@ -51,3 +51,13 @@ obscell-source/
 MEMORY.md
 AGGRON_DEPLOYMENT.md
 PHASE4_ZK_PLAN.md
+
+# Zero-Knowledge Artifacts
+circuits/*.ptau
+circuits/*_000*.zkey
+circuits/*.r1cs
+circuits/*.sym
+circuits/input.json
+circuits/proof.json
+circuits/public.json
+scratch/

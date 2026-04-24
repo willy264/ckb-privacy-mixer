@@ -11,12 +11,13 @@
   },
   "dependencies": {
     "@ckb-lumos/lumos": "^0.22.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "@nervosnetwork/ckb-sdk-core": "0.109.5",
+    "circomlibjs": "^0.1.7",
+    "dotenv": "^16.4.5",
     "framer-motion": "^11.11.0",
     "lucide-react": "^0.454.0",
-    "@nervosnetwork/ckb-sdk-core": "0.109.5",
-    "dotenv": "^16.4.5"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
