@@ -1,0 +1,43 @@
+What Has Been Done ✅
+Core Architecture: Designed and implemented the CoinJoin-based privacy mixer for Confidential Tokens on CKB.
+Smart Contracts:
+mixer-pool-type: Validates fixed-denomination (100 CT) shuffled transactions.
+nullifier-type: Prevents double-spending by maintaining a registry of spent notes.
+zk-membership-type: Verifies Groth16 zero-knowledge proofs for Merkle membership and nullifier derivation.
+ZK-Backend: Integrated Circom/Groth16 proving system with Poseidon hashing for efficient on-chain verification.
+TypeScript SDK: Built the coordination layer for MixSessions, Merkle tree management, and transaction building.
+Aggron Testnet Deployment:
+Atomic deployment of all three contract binaries in a single transaction (0xe6b257...).
+Successfully bootstrapped the live Nullifier Registry cell (0xb42daab...).
+Validated the deployment state and updated .env with live hashes and code hashes.
+What Remains 🔜
+Frontend Live Integration:
+Connect the existing Mixing UI to the SDK's live provider.
+Implement wallet connection (e.g., JoyID or ckb-js-toolkit) for real CT balance management.
+Integrate the off-chain prover into the browser/app flow for zero-knowledge proof generation.
+Production Hardening:
+Conduct final end-to-end tests of the withdrawal flow on Aggron using the live SDK and contracts.
+Verify the Trusted Setup parameters for the production zkey if moving toward Mainnet.
+The backend and on-chain foundation are now 100% complete and live on the testnet. The primary next step is bringing the user interface to life with live data.
+
+
+
+
+
+Mainnet  Yes, the core architecture and smart contracts are fully capable of being pushed to the CKB Mainnet (Lina). The code is written to standard CKB and RISC-V specifications.
+
+However, before deploying to Mainnet where real value is at stake, you must complete a few critical "Production Hardening" steps:
+
+1. Zero-Knowledge Trusted Setup
+Currently, the mixer_final.zkey and verification_key.json were likely generated using a development-grade "Powers of Tau" (e.g., pot13).
+
+Mainnet Requirement: You must run a proper Multi-Party Computation (MPC) Trusted Setup ceremony (or reuse compatible parameters from a public ceremony like Perpetual Powers of Tau). If anyone possesses the "toxic waste" from the development setup, they could forge proofs and steal funds.
+2. Security Audits
+Smart Contracts: The Rust code (mixer-pool-type, nullifier-type, zk-membership-type) needs a formal security audit.
+Circuits: The Circom circuit (mixer.circom) must be audited to ensure there are no under-constrained variables that could lead to forged proofs.
+3. External Dependencies (Obscell)
+Our mixer depends on the Obscell stealth-lock and ct-token-type contracts. You must ensure those contracts are actually deployed on the CKB Mainnet and that you trust their security.
+4. Code Configuration Updates
+In your SDK and deployment scripts, you would need to change lumosConfig.predefined.AGGRON4 to lumosConfig.predefined.LINA (the mainnet configuration).
+RPC URLs in .env would change from https://testnet.ckb.dev to a Mainnet node (e.g., https://mainnet.ckb.dev).
+In short: Technically yes, but please don't do it until the cryptography and contracts have been formally audited and a secure trusted setup is performed.`

@@ -1,6 +1,4 @@
 import * as snarkjs from 'snarkjs';
-import * as fs from 'fs';
-import * as path from 'path';
 
 export interface SnarkProofBundle {
     proof: any;

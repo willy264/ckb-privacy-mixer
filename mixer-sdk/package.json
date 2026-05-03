@@ -9,7 +9,8 @@
     "build": "tsc"
   },
   "dependencies": {
-    "circomlibjs": "^0.1.7"
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.6"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

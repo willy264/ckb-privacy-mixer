@@ -8,6 +8,7 @@ import type {
 import { deriveNullifier } from './crypto';
 import { bytesToHex, concatBytes, hexToBytes, u32LeBytes, utf8ToBytes } from './encoding';
 import { generateMerkleProof, verifyMerkleProof } from './merkle';
+import { generateProof, packProofForContract } from './prover';
 
 export interface LocalWithdrawalProofResult {
     publicInputs: WithdrawalPublicInputs;
@@ -15,6 +16,11 @@ export interface LocalWithdrawalProofResult {
     serializedWitness: Uint8Array;
     proofValid: boolean;
     snarkProof?: Uint8Array; // Real Groth16 proof
+}
+
+export interface Groth16ArtifactPaths {
+    wasmPath?: string;
+    zkeyPath?: string;
 }
 
 function resolveCommitment(note: DepositNote): string {
@@ -131,14 +137,32 @@ export async function reconstructWithdrawalProof(
     };
 }
 
-import { generateProof, packProofForContract } from './prover';
-import * as path from 'path';
+function resolveGroth16Artifacts(paths?: Groth16ArtifactPaths): Required<Groth16ArtifactPaths> {
+    if (paths?.wasmPath && paths?.zkeyPath) {
+        return {
+            wasmPath: paths.wasmPath,
+            zkeyPath: paths.zkeyPath,
+        };
+    }
+
+    if (typeof window !== 'undefined') {
+        throw new Error(
+            'Browser proof generation requires explicit wasmPath and zkeyPath artifact URLs.',
+        );
+    }
+
+    return {
+        wasmPath: 'circuits/mixer_js/mixer.wasm',
+        zkeyPath: 'circuits/mixer_final.zkey',
+    };
+}
 
 export async function buildRealWithdrawalProof(
     note: DepositNote,
     tree: MerkleTreeSnapshot,
     leafIndex: number,
-    denomination: bigint
+    denomination: bigint,
+    artifacts?: Groth16ArtifactPaths,
 ): Promise<LocalWithdrawalProofResult> {
     const base = await buildWithdrawalProof(note, tree, leafIndex, denomination);
     
@@ -157,8 +181,7 @@ export async function buildRealWithdrawalProof(
         pathIndices: base.witnessBundle.proof.pathDirections.map(d => d === 'left' ? 0 : 1)
     };
 
-    const wasmPath = path.resolve('circuits/mixer_js/mixer.wasm');
-    const zkeyPath = path.resolve('circuits/mixer_final.zkey');
+    const { wasmPath, zkeyPath } = resolveGroth16Artifacts(artifacts);
 
     const { proof } = await generateProof(input, wasmPath, zkeyPath);
     const snarkProof = packProofForContract(proof);
