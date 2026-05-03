@@ -74,27 +74,16 @@ async function main() {
     ];
 
     console.log('=== Aggron Contract Deployment (Lumos) ===');
-    const results: Record<string, DeployResult> = { ...existingResults };
-
-    for (const target of targets) {
-        const envResult = getResultFromEnv(target.envPrefix);
-        if (envResult) {
-            console.log(`Skipping ${target.name}; found existing deployment in .env`);
-            results[target.envPrefix] = envResult;
-            continue;
-        }
-
-        if (results[target.envPrefix]) {
-            console.log(`Skipping ${target.name}; found existing deployment in deployment_results.json`);
-            continue;
-        }
-
-        const result = await deployBinary(target.path, privateKey, target.name);
-        results[target.envPrefix] = result;
-        fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
-        const { waitForTransaction } = await import('./lumos-common');
-        await waitForTransaction(result.txHash);
-    }
+    
+    // We will deploy all three in one go.
+    // If you need to skip them based on existing results, you can comment this out, 
+    // but for now we enforce full redeploy to ensure they all get different indices in one TX.
+    
+    const { deployAllBinaries, waitForTransaction } = await import('./lumos-common');
+    const results = await deployAllBinaries(targets, privateKey);
+    
+    const sampleTxHash = Object.values(results)[0].txHash;
+    await waitForTransaction(sampleTxHash);
 
     fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
 

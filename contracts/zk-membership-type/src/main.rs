@@ -9,7 +9,6 @@ use ckb_std::{
     error::SysError,
     high_level::{load_cell_data, load_witness_args},
 };
-use sha2::{Digest, Sha256};
 
 
 mod error;

@@ -1,30 +1,51 @@
 import * as crypto from 'crypto';
-import { bytesToHex, concatBytes, hexToBytes, normalizeHex, utf8ToBytes } from './encoding';
+import { buildPoseidon } from 'circomlibjs';
+import { normalizeHex } from './encoding';
 
-function sha256Hex(payload: Uint8Array | string): string {
-    return crypto.createHash('sha256').update(payload).digest('hex');
+let poseidon: any;
+
+async function getPoseidon() {
+    if (!poseidon) {
+        poseidon = await buildPoseidon();
+    }
+    return poseidon;
 }
 
 /**
- * Derives a Pedersen commitment to a fixed denomination.
- * In production this uses curve25519-dalek via WASM or native bindings.
- * For now, returns a deterministic mock commitment bytes (hex).
+ * Derives a Poseidon commitment (leaf) for the mixer tree.
+ * leaf = Poseidon(blindingFactor, sessionId)
  */
-export function mockCommitment(amount: bigint, blindingFactor: string): string {
-    return sha256Hex(`${amount}:${normalizeHex(blindingFactor)}`);
+export async function deriveCommitment(blindingFactor: string, sessionId: string): Promise<string> {
+    const p = await getPoseidon();
+    // Convert hex strings to BigInts for Poseidon
+    const bf = BigInt('0x' + normalizeHex(blindingFactor));
+    // For sessionId, we'll hash it to a field element if it's a string, or just use it if it's already hex
+    const sid = sessionId.startsWith('0x') 
+        ? BigInt(sessionId) 
+        : BigInt('0x' + crypto.createHash('sha256').update(sessionId).digest('hex')) % 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+    const hash = p([bf, sid]);
+    return '0x' + BigInt(p.F.toString(hash)).toString(16).padStart(64, '0');
 }
 
 /** Generate a cryptographically secure random blinding factor (32 bytes, hex) */
 export function randomBlindingFactor(): string {
-    return crypto.randomBytes(32).toString('hex');
+    // Ensure the blinding factor is within the field prime
+    let bytes = crypto.randomBytes(31); // 31 bytes to be safe
+    return '0x' + bytes.toString('hex').padStart(64, '0');
 }
 
-/** Derive a nullifier from a blinding factor and session id. */
-export function deriveNullifier(blindingFactor: string, sessionId: string): string {
-    const payload = concatBytes(
-        Uint8Array.from([2]),
-        hexToBytes(blindingFactor),
-        utf8ToBytes(sessionId),
-    );
-    return bytesToHex(hexToBytes(sha256Hex(payload)));
+/** 
+ * Derive a nullifier from a blinding factor and session id. 
+ * nullifier = Poseidon(blindingFactor, sessionId, 1)
+ */
+export async function deriveNullifier(blindingFactor: string, sessionId: string): Promise<string> {
+    const p = await getPoseidon();
+    const bf = BigInt('0x' + normalizeHex(blindingFactor));
+    const sid = sessionId.startsWith('0x') 
+        ? BigInt(sessionId) 
+        : BigInt('0x' + crypto.createHash('sha256').update(sessionId).digest('hex')) % 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+    const hash = p([bf, sid, 1n]);
+    return '0x' + BigInt(p.F.toString(hash)).toString(16).padStart(64, '0');
 }

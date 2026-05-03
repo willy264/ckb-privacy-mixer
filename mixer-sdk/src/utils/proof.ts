@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import type { DepositNote } from '../types/note';
 import type {
     MerkleTreeSnapshot,
@@ -13,6 +14,7 @@ export interface LocalWithdrawalProofResult {
     witnessBundle: WithdrawalWitnessBundle;
     serializedWitness: Uint8Array;
     proofValid: boolean;
+    snarkProof?: Uint8Array; // Real Groth16 proof
 }
 
 function resolveCommitment(note: DepositNote): string {
@@ -44,25 +46,24 @@ export function serializeMembershipWitness(bundle: WithdrawalWitnessBundle): Uin
 }
 
 export function serializeWithdrawalPublicInputs(publicInputs: WithdrawalPublicInputs): Uint8Array {
-    return concatBytes(
-        hexToBytes(publicInputs.merkleRoot),
-        hexToBytes(publicInputs.nullifier),
-    );
+    const root = hexToBytes(publicInputs.merkleRoot).reverse();
+    const nullifier = hexToBytes(publicInputs.nullifier).reverse();
+    return concatBytes(root, nullifier);
 }
 
 export function serializeWithdrawalPublicInputsHex(publicInputs: WithdrawalPublicInputs): string {
     return bytesToHex(serializeWithdrawalPublicInputs(publicInputs));
 }
 
-export function buildWithdrawalProof(
+export async function buildWithdrawalProof(
     note: DepositNote,
     tree: MerkleTreeSnapshot,
     leafIndex: number,
     denomination: bigint,
-): LocalWithdrawalProofResult {
+): Promise<LocalWithdrawalProofResult> {
     const commitment = resolveCommitment(note);
-    const proof = generateMerkleProof(tree, leafIndex);
-    const nullifier = deriveNullifier(note.blindingFactor, note.sessionId);
+    const proof = await generateMerkleProof(tree, leafIndex);
+    const nullifier = await deriveNullifier(note.blindingFactor, note.sessionId);
 
     note.leafIndex = leafIndex;
     note.merkleRoot = tree.root;
@@ -87,14 +88,14 @@ export function buildWithdrawalProof(
         publicInputs,
         witnessBundle,
         serializedWitness: serializeMembershipWitness(witnessBundle),
-        proofValid: verifyMerkleProof(proof),
+        proofValid: await verifyMerkleProof(proof),
     };
 }
 
-export function reconstructWithdrawalProof(
+export async function reconstructWithdrawalProof(
     note: DepositNote,
     denomination: bigint,
-): LocalWithdrawalProofResult {
+): Promise<LocalWithdrawalProofResult> {
     if (!note.commitment) {
         throw new Error('Deposit note is missing commitment');
     }
@@ -126,6 +127,44 @@ export function reconstructWithdrawalProof(
         publicInputs,
         witnessBundle,
         serializedWitness: serializeMembershipWitness(witnessBundle),
-        proofValid: verifyMerkleProof(note.merkleProof),
+        proofValid: await verifyMerkleProof(note.merkleProof),
+    };
+}
+
+import { generateProof, packProofForContract } from './prover';
+import * as path from 'path';
+
+export async function buildRealWithdrawalProof(
+    note: DepositNote,
+    tree: MerkleTreeSnapshot,
+    leafIndex: number,
+    denomination: bigint
+): Promise<LocalWithdrawalProofResult> {
+    const base = await buildWithdrawalProof(note, tree, leafIndex, denomination);
+    
+    // Prepare input for snarkjs
+    // sessionId needs to be field element
+    const sid = note.sessionId.startsWith('0x') 
+        ? BigInt(note.sessionId) 
+        : BigInt('0x' + crypto.createHash('sha256').update(note.sessionId).digest('hex')) % 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+    const input = {
+        root: BigInt(tree.root),
+        nullifierHash: BigInt(base.publicInputs.nullifier),
+        blindingFactor: BigInt(note.blindingFactor),
+        sessionId: sid,
+        pathElements: base.witnessBundle.proof.siblings.map(s => BigInt(s)),
+        pathIndices: base.witnessBundle.proof.pathDirections.map(d => d === 'left' ? 0 : 1)
+    };
+
+    const wasmPath = path.resolve('circuits/mixer_js/mixer.wasm');
+    const zkeyPath = path.resolve('circuits/mixer_final.zkey');
+
+    const { proof } = await generateProof(input, wasmPath, zkeyPath);
+    const snarkProof = packProofForContract(proof);
+
+    return {
+        ...base,
+        snarkProof
     };
 }

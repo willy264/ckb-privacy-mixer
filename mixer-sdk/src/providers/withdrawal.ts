@@ -38,7 +38,7 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             );
         }
 
-        const proof = reconstructWithdrawalProof(note, this.denomination);
+        const proof = await reconstructWithdrawalProof(note, this.denomination);
         const registryCell = await this.loadRegistryCell(config);
         return {
             config,

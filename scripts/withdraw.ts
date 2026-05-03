@@ -4,6 +4,7 @@
  * through the provider/config resolution path.
  * Usage: npx tsx scripts/withdraw.ts
  */
+import 'dotenv/config';
 import {
     AggronWithdrawalProvider,
     MemoryWithdrawalProvider,
@@ -21,7 +22,7 @@ async function main() {
     clearSpentNullifiers();
     console.log('Running live Phase 3 withdrawal transaction simulation...');
 
-    const example = runPhase4Example();
+    const example = await runPhase4Example();
     const env = {
         CKB_RPC_URL: process.env.CKB_RPC_URL ?? 'https://testnet.ckb.dev',
         CKB_INDEXER_URL: process.env.CKB_INDEXER_URL ?? 'https://testnet.ckb.dev',

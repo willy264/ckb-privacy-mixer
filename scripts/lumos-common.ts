@@ -157,6 +157,7 @@ export async function buildAndSendTransaction(
         const txHash = await getRpc().sendTransaction(sealedTx, 'passthrough');
         return { txHash, sealedTx, duplicated: false };
     } catch (error) {
+        console.error('buildAndSendTransaction error:', error);
         const txHash = extractTxHashFromError(error);
         if (txHash) {
             console.warn(`Transaction appears to be already in pool: ${txHash}`);
@@ -181,16 +182,7 @@ export async function deployBinary(
     const totalCapacity = 61n * SHANNONS + BigInt(bytes) * SHANNONS;
 
     let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
-    txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
-        outputs.push({
-            cellOutput: {
-                capacity: hexCapacity(totalCapacity),
-                lock: lockScript,
-            },
-            data: hex,
-        }),
-    );
-
+    
     txSkeleton = await commons.common.injectCapacity(
         txSkeleton,
         [address],
@@ -198,6 +190,13 @@ export async function deployBinary(
         undefined,
         undefined,
         { config: lumosConfig.getConfig() },
+    );
+
+    txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
+        outputs.update(outputs.size - 1, (cell: any) => ({
+            ...cell,
+            data: hex,
+        })),
     );
 
     txSkeleton = await commons.common.payFeeByFeeRate(
@@ -219,6 +218,77 @@ export async function deployBinary(
         index: '0x0',
         codeHash,
     };
+}
+
+export async function deployAllBinaries(
+    targets: { path: string; name: string; envPrefix: string }[],
+    privateKey: string,
+): Promise<Record<string, { txHash: string; index: string; codeHash: string }>> {
+    const indexer = getIndexer();
+    const lockScript = getDeployerLock(privateKey);
+    const address = getDeployerAddress(privateKey);
+
+    const binaries = targets.map((t, i) => {
+        const { hex, bytes, codeHash } = readBinaryHex(t.path);
+        const capacity = BigInt(bytes) * SHANNONS + 61n * SHANNONS;
+        return { ...t, hex, bytes, codeHash, capacity, index: `0x${i.toString(16)}` };
+    });
+
+    const totalCapacity = binaries.reduce((acc, b) => acc + b.capacity, 0n);
+
+    let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
+    
+    txSkeleton = await commons.common.injectCapacity(
+        txSkeleton,
+        [address],
+        totalCapacity,
+        undefined,
+        undefined,
+        { config: lumosConfig.getConfig() },
+    );
+
+    // Create a new output for each binary and push it
+    for (const b of binaries) {
+        txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
+            outputs.push({
+                cellOutput: {
+                    capacity: `0x${b.capacity.toString(16)}`,
+                    lock: lockScript,
+                },
+                data: b.hex,
+            })
+        );
+    }
+
+    txSkeleton = await commons.common.payFeeByFeeRate(
+        txSkeleton,
+        [address],
+        DEFAULT_FEE_RATE,
+        undefined,
+        { config: lumosConfig.getConfig() },
+    );
+
+    txSkeleton = commons.common.prepareSigningEntries(txSkeleton, {
+        config: lumosConfig.getConfig(),
+    });
+
+    const { txHash } = await buildAndSendTransaction(txSkeleton, privateKey);
+    console.log(`All binaries deployed in transaction: ${txHash}`);
+    
+    const results: Record<string, any> = {};
+    for (const b of binaries) {
+        // the outputs we pushed were added to the end, but payFeeByFeeRate might modify the change cell.
+        // Actually, the change cell was the LAST one before we pushed our new outputs.
+        // Let's find the actual index in the final outputs array.
+        const finalOutputs = txSkeleton.get('outputs').toArray();
+        const index = finalOutputs.findIndex((o: any) => o.data === b.hex);
+        results[b.envPrefix] = {
+            txHash,
+            index: `0x${index.toString(16)}`,
+            codeHash: b.codeHash,
+        };
+    }
+    return results;
 }
 
 export async function bootstrapRegistryCell(
@@ -257,16 +327,6 @@ export async function bootstrapRegistryCell(
     const capacity = minimalCapacity + 20n * SHANNONS;
 
     let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
-    txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
-        outputs.push({
-            cellOutput: {
-                capacity: hexCapacity(capacity),
-                lock: lockScript,
-                type: typeScript,
-            },
-            data,
-        }),
-    );
 
     txSkeleton = await commons.common.injectCapacity(
         txSkeleton,
@@ -277,6 +337,17 @@ export async function bootstrapRegistryCell(
         { config: lumosConfig.getConfig() },
     );
 
+    txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
+        outputs.update(outputs.size - 1, (cell: any) => ({
+            ...cell,
+            cellOutput: {
+                ...cell.cellOutput,
+                type: typeScript,
+            },
+            data,
+        })),
+    );
+
     txSkeleton = await commons.common.payFeeByFeeRate(
         txSkeleton,
         [address],
@@ -285,6 +356,15 @@ export async function bootstrapRegistryCell(
         { config: lumosConfig.getConfig() },
     );
 
+    txSkeleton = txSkeleton.update('cellDeps', cellDeps => cellDeps.push({
+        outPoint: {
+            txHash: requiredEnv('NULLIFIER_TYPE_TX_HASH'),
+            index: requiredEnv('NULLIFIER_TYPE_INDEX')
+        },
+        depType: 'code'
+    }));
+
+    console.log('Outputs after payFeeByFeeRate:', JSON.stringify(txSkeleton.get('outputs').toArray(), null, 2));
     txSkeleton = commons.common.prepareSigningEntries(txSkeleton, {
         config: lumosConfig.getConfig(),
     });

@@ -69,7 +69,7 @@ export function clearSpentNullifiers() {
     SPENT_NULLIFIERS.clear();
 }
 
-export function buildWithdrawTransaction(params: LiveWithdrawalBuildParams): WithdrawalTransaction {
+export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams): Promise<WithdrawalTransaction> {
     const {
         note,
         registryCell,
@@ -92,7 +92,7 @@ export function buildWithdrawTransaction(params: LiveWithdrawalBuildParams): Wit
         ...contracts,
     };
 
-    const derivedNullifier = deriveNullifier(note.blindingFactor, note.sessionId);
+    const derivedNullifier = await deriveNullifier(note.blindingFactor, note.sessionId);
     if (proof.publicInputs.nullifier !== derivedNullifier) {
         throw new Error('Proof public inputs nullifier does not match the deposit note');
     }
@@ -111,7 +111,10 @@ export function buildWithdrawTransaction(params: LiveWithdrawalBuildParams): Wit
 
     const updatedRegistry = [...currentRegistry, normalizedNullifier];
     const verifierOutputDataHex = `0x${serializeWithdrawalPublicInputsHex(proof.publicInputs)}`;
-    const proofWitnessHex = `0x${Array.from(proof.serializedWitness, byte => byte.toString(16).padStart(2, '0')).join('')}`;
+    
+    // Use the real SNARK proof if available, otherwise fallback to the mock witness bundle
+    const proofBytes = proof.snarkProof ?? proof.serializedWitness;
+    const proofWitnessHex = `0x${Array.from(proofBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
 
     return {
         rawTransaction: {
@@ -209,7 +212,7 @@ export async function prepareLiveWithdrawTransaction(
 
     if (isProviderExecutionParams(params)) {
         const resolution = await params.provider.resolveWithdrawal(note);
-        return buildWithdrawTransaction({
+        return await buildWithdrawTransaction({
             note,
             registryCell: resolution.registryCell,
             proof: resolution.proof,
@@ -231,7 +234,7 @@ export async function prepareLiveWithdrawTransaction(
         });
     }
 
-    return buildWithdrawTransaction({
+    return await buildWithdrawTransaction({
         note,
         ...params,
     });
@@ -243,7 +246,7 @@ export async function withdrawMix(
 ): Promise<string> {
     validateNote(note);
 
-    const nullifier = normalizeHex(deriveNullifier(note.blindingFactor, note.sessionId));
+    const nullifier = normalizeHex(await deriveNullifier(note.blindingFactor, note.sessionId));
     if (SPENT_NULLIFIERS.has(nullifier)) {
         throw new Error(`Nullifier already used: ${nullifier}`);
     }

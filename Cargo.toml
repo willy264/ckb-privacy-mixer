@@ -1,3 +1,5 @@
+cargo-features = ["panic-immediate-abort"]
+
 [workspace]
 resolver = "2"
 members = [
@@ -6,3 +8,10 @@ members = [
     "contracts/zk-membership-type",
     "tests"
 ]
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "immediate-abort"
