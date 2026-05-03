@@ -1,7 +1,7 @@
 import type { DepositNote as MixerDepositNote } from 'mixer-sdk';
 
 export type WithdrawalMode = 'aggron-preview' | 'local-preview';
-export type VaultWithdrawalStatus = 'idle' | 'proof-ready';
+export type VaultWithdrawalStatus = 'idle' | 'proof-ready' | 'submitted';
 
 export interface DepositNote extends MixerDepositNote {
   denomination: number;
@@ -9,6 +9,8 @@ export interface DepositNote extends MixerDepositNote {
   withdrawalStatus?: VaultWithdrawalStatus;
   lastPreparedAt?: number;
   lastPreparedMode?: WithdrawalMode;
+  lastBroadcastAt?: number;
+  lastBroadcastHash?: string;
 }
 
 const VAULT_KEY = 'obscell_mixer_vault';

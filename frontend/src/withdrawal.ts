@@ -1,8 +1,11 @@
+import { getJoyIDCellDep, signRawTransaction } from '@joyid/ckb';
 import {
   AggronWithdrawalProvider,
   buildMerkleTree,
   buildRealWithdrawalProof,
   buildWithdrawTransaction,
+  type CkbCellDep,
+  type CkbTransaction,
   deriveCommitment,
   randomBlindingFactor,
   type LocalWithdrawalProofResult,
@@ -20,6 +23,10 @@ export interface PreparedVaultWithdrawal {
   warnings: string[];
   sessionSize: number;
   registrySize: number;
+}
+
+export interface PrepareVaultWithdrawalOptions {
+  recipientLock?: string;
 }
 
 export async function buildSessionCommitments(
@@ -79,7 +86,36 @@ function buildLocalPreviewRegistry(note: DepositNote) {
   };
 }
 
-export async function prepareVaultWithdrawal(note: DepositNote): Promise<PreparedVaultWithdrawal> {
+function ensureJoyIdCellDep(transaction: CkbTransaction): CkbTransaction {
+  const joyIdDep = getJoyIDCellDep(false);
+  const mappedDep: CkbCellDep = {
+    outPoint: {
+      txHash: joyIdDep.outPoint.txHash,
+      index: joyIdDep.outPoint.index,
+    },
+    depType: joyIdDep.depType,
+  };
+
+  const exists = transaction.cellDeps.some(dep =>
+    dep.outPoint.txHash === mappedDep.outPoint.txHash &&
+    dep.outPoint.index === mappedDep.outPoint.index &&
+    dep.depType === mappedDep.depType,
+  );
+
+  if (exists) {
+    return transaction;
+  }
+
+  return {
+    ...transaction,
+    cellDeps: [...transaction.cellDeps, mappedDep],
+  };
+}
+
+export async function prepareVaultWithdrawal(
+  note: DepositNote,
+  options: PrepareVaultWithdrawalOptions = {},
+): Promise<PreparedVaultWithdrawal> {
   if (note.denomination !== Number(SUPPORTED_DENOMINATION)) {
     throw new Error('Only 100 CT notes are supported by the live mixer contracts right now.');
   }
@@ -120,6 +156,7 @@ export async function prepareVaultWithdrawal(note: DepositNote): Promise<Prepare
           ctTokenType: liveConfig.ctTokenType,
         },
         denomination: SUPPORTED_DENOMINATION,
+        recipientLock: options.recipientLock,
       });
 
       return {
@@ -151,6 +188,7 @@ export async function prepareVaultWithdrawal(note: DepositNote): Promise<Prepare
         }
       : undefined,
     denomination: SUPPORTED_DENOMINATION,
+    recipientLock: options.recipientLock,
   });
 
   return {
@@ -161,4 +199,35 @@ export async function prepareVaultWithdrawal(note: DepositNote): Promise<Prepare
     sessionSize: commitments.length,
     registrySize: 0,
   };
+}
+
+export async function broadcastPreparedWithdrawal(
+  prepared: PreparedVaultWithdrawal,
+  signerAddress: string,
+): Promise<string> {
+  if (prepared.mode !== 'aggron-preview') {
+    throw new Error('Live broadcast is only available when Aggron runtime config and registry data are loaded.');
+  }
+
+  const runtimeStatus = tryLoadFrontendRuntimeConfig();
+  const liveConfig = runtimeStatus.config;
+  if (!liveConfig?.nullifierRegistry) {
+    throw new Error(runtimeStatus.error ?? 'Missing live Aggron runtime config.');
+  }
+
+  const provider = new AggronWithdrawalProvider({
+    config: liveConfig,
+    denomination: SUPPORTED_DENOMINATION,
+  });
+
+  const signingRequest = await provider.prepareJoyIdSigningRequest(
+    prepared.transaction,
+    signerAddress,
+  );
+  const unsignedTransaction = ensureJoyIdCellDep(signingRequest.transaction);
+  const signedTransaction = await signRawTransaction(unsignedTransaction as any, signerAddress, {
+    witnessIndexes: signingRequest.witnessIndexes,
+  });
+
+  return provider.broadcastSignedWithdrawal(signedTransaction as CkbTransaction);
 }

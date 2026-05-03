@@ -19,6 +19,7 @@ import {
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import {
   buildSessionCommitments,
+  broadcastPreparedWithdrawal,
   prepareVaultWithdrawal,
   type PreparedVaultWithdrawal,
 } from "./withdrawal";
@@ -49,6 +50,8 @@ interface StatusBanner {
 interface WithdrawalPreview extends PreparedVaultWithdrawal {
   preparedAt: number;
   rawTransactionJson: string;
+  broadcastTxHash?: string;
+  broadcastedAt?: number;
 }
 
 const SUPPORTED_DENOMINATION: Denomination = 100;
@@ -78,6 +81,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"mixer" | "vault">("mixer");
   const [vaultNotes, setVaultNotes] = useState<DepositNote[]>([]);
   const [withdrawalBusyId, setWithdrawalBusyId] = useState<string | null>(null);
+  const [broadcastBusyId, setBroadcastBusyId] = useState<string | null>(null);
   const [preparedWithdrawals, setPreparedWithdrawals] = useState<Record<string, WithdrawalPreview>>({});
   const [statusBanner, setStatusBanner] = useState<StatusBanner | null>(null);
   const [completedMixSessionId, setCompletedMixSessionId] = useState<string | null>(null);
@@ -221,7 +225,9 @@ export default function App() {
     setStatusBanner(null);
 
     try {
-      const prepared = await prepareVaultWithdrawal(note);
+      const prepared = await prepareVaultWithdrawal(note, {
+        recipientLock: walletAddress ?? undefined,
+      });
       const preparedAt = Date.now();
       const updatedNote: DepositNote = {
         ...note,
@@ -258,6 +264,65 @@ export default function App() {
       });
     } finally {
       setWithdrawalBusyId(null);
+    }
+  };
+
+  const handleBroadcastWithdrawal = async (note: DepositNote) => {
+    if (!walletAddress) {
+      setStatusBanner({
+        tone: "error",
+        text: "Connect the JoyID wallet that owns the live registry lock before broadcasting a withdrawal.",
+      });
+      return;
+    }
+
+    const noteId = getNoteId(note);
+    setBroadcastBusyId(noteId);
+    setStatusBanner(null);
+
+    try {
+      const prepared = await prepareVaultWithdrawal(note, {
+        recipientLock: walletAddress,
+      });
+      const preparedAt = Date.now();
+      const txHash = await broadcastPreparedWithdrawal(prepared, walletAddress);
+      const broadcastedAt = Date.now();
+      const updatedNote: DepositNote = {
+        ...note,
+        nullifier: prepared.proof.publicInputs.nullifier,
+        merkleRoot: prepared.proof.publicInputs.merkleRoot,
+        merkleProof: prepared.proof.witnessBundle.proof,
+        leafIndex: prepared.proof.witnessBundle.proof.leafIndex,
+        withdrawalStatus: "submitted",
+        lastPreparedAt: preparedAt,
+        lastPreparedMode: prepared.mode,
+        lastBroadcastAt: broadcastedAt,
+        lastBroadcastHash: txHash,
+      };
+
+      updateNoteInVault(updatedNote);
+      setVaultNotes(getNotesFromVault());
+      setPreparedWithdrawals(prev => ({
+        ...prev,
+        [noteId]: {
+          ...prepared,
+          preparedAt,
+          rawTransactionJson: JSON.stringify(prepared.transaction.rawTransaction, null, 2),
+          broadcastTxHash: txHash,
+          broadcastedAt,
+        },
+      }));
+      setStatusBanner({
+        tone: "success",
+        text: `Withdrawal broadcast to Aggron. Transaction hash: ${txHash}`,
+      });
+    } catch (error) {
+      setStatusBanner({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Failed to sign and broadcast the withdrawal.",
+      });
+    } finally {
+      setBroadcastBusyId(null);
     }
   };
 
@@ -596,6 +661,7 @@ export default function App() {
                 const noteId = getNoteId(note);
                 const prepared = preparedWithdrawals[noteId];
                 const isPreparing = withdrawalBusyId === noteId;
+                const isBroadcasting = broadcastBusyId === noteId;
                 const supported = note.denomination === SUPPORTED_DENOMINATION;
 
                 return (
@@ -605,8 +671,8 @@ export default function App() {
                         <span className="text-[10px] text-gray-500 uppercase tracking-widest">Amount</span>
                         <h3 className="text-2xl font-orbitron text-white">{note.denomination} CT</h3>
                       </div>
-                      <div className={`px-3 py-1 rounded-full text-[10px] uppercase border ${note.withdrawalStatus === "proof-ready" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/5 text-gray-400"}`}>
-                        {note.withdrawalStatus === "proof-ready" ? "Proof Ready" : "Awaiting Proof"}
+                      <div className={`px-3 py-1 rounded-full text-[10px] uppercase border ${note.withdrawalStatus === "submitted" ? "border-sky-400/30 bg-sky-500/10 text-sky-200" : note.withdrawalStatus === "proof-ready" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/5 text-gray-400"}`}>
+                        {note.withdrawalStatus === "submitted" ? "Broadcasted" : note.withdrawalStatus === "proof-ready" ? "Proof Ready" : "Awaiting Proof"}
                       </div>
                     </div>
 
@@ -643,9 +709,29 @@ export default function App() {
                           : "Generate Proof & Prepare Withdrawal"}
                     </button>
 
+                    <button
+                      className={`btn-primary w-full ${prepared?.mode === "aggron-preview" && walletAddress ? "bg-gradient-to-r from-[#00f2ff] to-[#0082ff] text-black" : "opacity-50 cursor-not-allowed"}`}
+                      disabled={!prepared || prepared.mode !== "aggron-preview" || !walletAddress || isPreparing || isBroadcasting}
+                      onClick={() => void handleBroadcastWithdrawal(note)}
+                    >
+                      {isBroadcasting ? "Broadcasting..." : "Sign With JoyID & Broadcast"}
+                    </button>
+
                     {!supported && (
                       <p className="text-xs text-amber-200/80">
                         This is a legacy UI denomination. The deployed contracts only support 100 CT withdrawals.
+                      </p>
+                    )}
+
+                    {supported && !walletAddress && (
+                      <p className="text-xs text-gray-400">
+                        Connect the JoyID wallet that controls the live registry lock to sign and broadcast from the browser.
+                      </p>
+                    )}
+
+                    {prepared?.mode === "local-preview" && (
+                      <p className="text-xs text-amber-100/80">
+                        This note is only prepared for local preview right now. Load the Aggron runtime config before attempting a live broadcast.
                       </p>
                     )}
 
@@ -673,6 +759,14 @@ export default function App() {
                           <div>Witness bytes: {prepared.proof.serializedWitness.length}</div>
                           <div>Outputs: {prepared.transaction.outputs.length}</div>
                         </div>
+                        {(prepared.broadcastTxHash || note.lastBroadcastHash) && (
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase block">Broadcast Tx</span>
+                            <span className="text-xs text-gray-300 font-mono break-all">
+                              {prepared.broadcastTxHash ?? note.lastBroadcastHash}
+                            </span>
+                          </div>
+                        )}
                         {prepared.warnings.length > 0 && (
                           <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-2">
                             {prepared.warnings.map(warning => (

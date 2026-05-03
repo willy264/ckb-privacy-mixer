@@ -51,6 +51,50 @@ export interface WithdrawalCellDep {
     contract: ContractReference | string;
 }
 
+export interface CkbOutPoint {
+    txHash: string;
+    index: string;
+}
+
+export interface CkbScript {
+    codeHash: string;
+    hashType: 'data' | 'data1' | 'type';
+    args: string;
+}
+
+export interface CkbCellDep {
+    outPoint: CkbOutPoint;
+    depType: 'code' | 'depGroup';
+}
+
+export interface CkbInput {
+    previousOutput: CkbOutPoint;
+    since: string;
+}
+
+export interface CkbOutput {
+    capacity: string;
+    lock: CkbScript;
+    type?: CkbScript;
+}
+
+export interface CkbTransaction {
+    version: string;
+    cellDeps: CkbCellDep[];
+    headerDeps: string[];
+    inputs: CkbInput[];
+    outputs: CkbOutput[];
+    outputsData: string[];
+    witnesses: string[];
+    hash?: string;
+}
+
+export interface JoyIdSigningRequest {
+    transaction: CkbTransaction;
+    witnessIndexes: number[];
+    signerAddress: string;
+}
+
 export interface WithdrawalRawTransaction {
     version: '0x0';
     cellDeps: WithdrawalCellDep[];

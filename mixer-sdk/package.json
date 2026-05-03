@@ -9,6 +9,8 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@ckb-lumos/lumos": "^0.22.0",
+    "@nervosnetwork/ckb-sdk-utils": "0.109.5",
     "circomlibjs": "^0.1.7",
     "snarkjs": "^0.7.6"
   },
