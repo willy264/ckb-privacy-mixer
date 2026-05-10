@@ -1,4 +1,5 @@
 export type HexString = string;
+export type ProofEncoding = 'groth16-bn254-arkworks-uncompressed-v1';
 
 export type MerkleDirection = 'left' | 'right';
 
@@ -30,4 +31,9 @@ export interface WithdrawalWitnessBundle {
     blindingFactor: HexString;
     sessionId: string;
     proof: MerkleProof;
+}
+
+export interface PackedGroth16Proof {
+    encoding: ProofEncoding;
+    bytes: Uint8Array;
 }

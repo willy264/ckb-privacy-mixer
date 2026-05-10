@@ -1,6 +1,7 @@
 import { joinMix } from './operations/deposit';
 import { withdrawMix } from './operations/withdraw';
 import type { JoinMixParams } from './operations/deposit';
+import type { DepositResult } from './core/session';
 import type { DepositNote } from './types/note';
 import type {
     LiveWithdrawalBuildParams,
@@ -8,7 +9,7 @@ import type {
 } from './types/withdrawal';
 
 export class MixerClient {
-    public async deposit(params: JoinMixParams): Promise<string> {
+    public async deposit(params: JoinMixParams): Promise<DepositResult> {
         return joinMix(params);
     }
 

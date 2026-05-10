@@ -12,13 +12,13 @@ import {
 } from "lucide-react";
 import { connect, initConfig } from "@joyid/ckb";
 import {
-  deriveCommitment,
   generateStealthAddress,
+  joinMix,
   randomBlindingFactor,
+  type DepositResult,
 } from "mixer-sdk";
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import {
-  buildSessionCommitments,
   broadcastPreparedWithdrawal,
   prepareVaultWithdrawal,
   type PreparedVaultWithdrawal,
@@ -26,6 +26,7 @@ import {
 import {
   getNoteId,
   getNotesFromVault,
+  refreshVault,
   saveNoteToVault,
   updateNoteInVault,
   type DepositNote,
@@ -38,7 +39,7 @@ interface PoolState {
   denomination: Denomination;
   participants: number;
   maxParticipants: number;
-  live: boolean;
+  available: boolean;
   statusLabel: string;
 }
 
@@ -55,11 +56,6 @@ interface WithdrawalPreview extends PreparedVaultWithdrawal {
 }
 
 const SUPPORTED_DENOMINATION: Denomination = 100;
-const POOLS: PoolState[] = [
-  { denomination: 100, participants: 4, maxParticipants: 5, live: true, statusLabel: "Live on Aggron" },
-  { denomination: 10, participants: 2, maxParticipants: 5, live: false, statusLabel: "Backend not deployed" },
-  { denomination: 1000, participants: 1, maxParticipants: 3, live: false, statusLabel: "Backend not deployed" },
-];
 
 function getBannerClasses(tone: BannerTone) {
   if (tone === "success") {
@@ -82,13 +78,41 @@ export default function App() {
   const [vaultNotes, setVaultNotes] = useState<DepositNote[]>([]);
   const [withdrawalBusyId, setWithdrawalBusyId] = useState<string | null>(null);
   const [broadcastBusyId, setBroadcastBusyId] = useState<string | null>(null);
+  const [depositBusy, setDepositBusy] = useState(false);
   const [preparedWithdrawals, setPreparedWithdrawals] = useState<Record<string, WithdrawalPreview>>({});
   const [statusBanner, setStatusBanner] = useState<StatusBanner | null>(null);
-  const [completedMixSessionId, setCompletedMixSessionId] = useState<string | null>(null);
+  const [lastDepositResult, setLastDepositResult] = useState<DepositResult | null>(null);
   const [runtimeStatus] = useState(() => tryLoadFrontendRuntimeConfig());
 
-  const selectedPoolState = POOLS.find(pool => pool.denomination === selectedPool) ?? null;
-  const runtimeReady = !!runtimeStatus.config?.nullifierRegistry;
+  const runtimeMode = runtimeStatus.mode;
+  const runtimeReady = runtimeStatus.config?.runtimeMode === "live" && !!runtimeStatus.config?.nullifierRegistry;
+  const withdrawalAuthority = runtimeStatus.authority;
+  const selectedPoolState = (() => {
+    const pools: PoolState[] = [
+      {
+        denomination: 100,
+        participants: lastDepositResult?.session.participantCount ?? 3,
+        maxParticipants: lastDepositResult?.session.requiredParticipants ?? 3,
+        available: runtimeMode !== "disabled",
+        statusLabel: runtimeMode === "live" ? "Live preview on Aggron" : runtimeMode === "preview" ? "Preview coordinator" : "Config incomplete",
+      },
+      { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Backend not deployed" },
+      { denomination: 1000, participants: 0, maxParticipants: 3, available: false, statusLabel: "Backend not deployed" },
+    ];
+    return pools.find(pool => pool.denomination === selectedPool) ?? null;
+  })();
+
+  const pools: PoolState[] = [
+    {
+      denomination: 100,
+      participants: lastDepositResult?.session.participantCount ?? 3,
+      maxParticipants: lastDepositResult?.session.requiredParticipants ?? 3,
+      available: runtimeMode !== "disabled",
+      statusLabel: runtimeMode === "live" ? "Live preview on Aggron" : runtimeMode === "preview" ? "Preview coordinator" : "Config incomplete",
+    },
+    { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Backend not deployed" },
+    { denomination: 1000, participants: 0, maxParticipants: 3, available: false, statusLabel: "Backend not deployed" },
+  ];
 
   useEffect(() => {
     initConfig({
@@ -97,46 +121,14 @@ export default function App() {
       joyidAppURL: "https://testnet.joyid.dev",
       network: "testnet",
     });
+    void refreshVault().then(notes => setVaultNotes(notes));
   }, []);
 
   useEffect(() => {
     if (activeTab === "vault") {
-      setVaultNotes(getNotesFromVault());
+      void refreshVault().then(notes => setVaultNotes(notes));
     }
   }, [activeTab]);
-
-  const handleConnect = async () => {
-    try {
-      const connection = await connect();
-      setWalletAddress(connection.address);
-      setStatusBanner({
-        tone: "success",
-        text: "Wallet connected. New deposits will derive their stealth destination from your JoyID session.",
-      });
-    } catch (error) {
-      console.error("Connection failed:", error);
-      setStatusBanner({
-        tone: "error",
-        text: "JoyID connection failed. You can still explore the local proof flow with simulated notes.",
-      });
-    }
-  };
-
-  const startMixing = (pool: PoolState) => {
-    if (!pool.live) {
-      setStatusBanner({
-        tone: "info",
-        text: `The ${pool.denomination} CT pool is still blocked by backend support. The live mixer currently supports fixed 100 CT deposits only.`,
-      });
-      return;
-    }
-
-    setSelectedPool(pool.denomination);
-    setIsMixing(true);
-    setMixingStep(0);
-    setCompletedMixSessionId(null);
-    setStatusBanner(null);
-  };
 
   useEffect(() => {
     if (!isMixing) {
@@ -145,79 +137,102 @@ export default function App() {
 
     const timer = setInterval(() => {
       setMixingStep(prev => {
-        if (prev >= 100) {
+        if (prev >= 96) {
           clearInterval(timer);
-          return 100;
+          return 96;
         }
-        return prev + 1;
+        return prev + 4;
       });
-    }, 50);
+    }, 120);
 
     return () => clearInterval(timer);
   }, [isMixing]);
 
-  useEffect(() => {
-    if (
-      mixingStep !== 100 ||
-      !selectedPoolState ||
-      completedMixSessionId ||
-      selectedPoolState.denomination !== SUPPORTED_DENOMINATION
-    ) {
+  const handleConnect = async () => {
+    try {
+      const connection = await connect();
+      setWalletAddress(connection.address);
+      setStatusBanner({
+        tone: "success",
+        text: "Wallet connected. Deposit notes will derive their stealth destination from this JoyID session.",
+      });
+    } catch (error) {
+      console.error("Connection failed:", error);
+      setStatusBanner({
+        tone: "error",
+        text: "JoyID connection failed. Wallet connection is required before preparing a deposit note.",
+      });
+    }
+  };
+
+  const startMixing = async (pool: PoolState) => {
+    if (!pool.available) {
+      setStatusBanner({
+        tone: "info",
+        text: `The ${pool.denomination} CT pool is not available yet. The current demo supports fixed 100 CT deposits only.`,
+      });
       return;
     }
 
-    let cancelled = false;
-
-    const generateNote = async () => {
-      const now = Date.now();
-      const sessionId = `session_${now.toString(36)}`;
-      const blindingFactor = randomBlindingFactor();
-      const recipientMeta = walletAddress ?? `guest_${Math.random().toString(36).slice(2, 8)}`;
-      const stealthOutputAddress = generateStealthAddress(recipientMeta);
-      const commitment = await deriveCommitment(blindingFactor, sessionId);
-      const { commitments, leafIndex } = await buildSessionCommitments(
-        commitment,
-        selectedPoolState.participants,
-      );
-
-      const note: DepositNote = {
-        sessionId,
-        inputOutPoint: `0xmix_${now.toString(16)}:${leafIndex}`,
-        blindingFactor,
-        stealthOutputAddress,
-        createdAt: now,
-        commitment,
-        denomination: selectedPoolState.denomination,
-        leafIndex,
-        sessionCommitments: commitments,
-        withdrawalStatus: "idle",
-      };
-
-      if (cancelled) {
-        return;
-      }
-
-      saveNoteToVault(note);
-      setVaultNotes(getNotesFromVault());
-      setCompletedMixSessionId(sessionId);
-      setStatusBanner({
-        tone: "success",
-        text: "Mix complete. Your deposit note and local session commitments are now stored in the vault for browser-side proof generation.",
-      });
-    };
-
-    generateNote().catch(error => {
-      console.error("Failed to generate vault note", error);
+    if (!walletAddress) {
       setStatusBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "Failed to create the vault note for this mix.",
+        text: "Connect JoyID before preparing a deposit note.",
       });
-    });
+      return;
+    }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [completedMixSessionId, mixingStep, selectedPoolState, walletAddress]);
+    setSelectedPool(pool.denomination);
+    setIsMixing(true);
+    setMixingStep(10);
+    setDepositBusy(true);
+    setStatusBanner(null);
+
+    try {
+      const stealthOutputAddress = generateStealthAddress(walletAddress);
+      const result = await joinMix({
+        ctInputCell: {
+          outPoint: `0xpreview_${Date.now().toString(16)}`,
+          amount: BigInt(pool.denomination),
+          blindingFactor: randomBlindingFactor(),
+        },
+        stealthOutputAddress,
+        privateKey: `joyid_session_${walletAddress.slice(-8)}`,
+        runtimeMode: runtimeMode === "live" ? "live" : "preview",
+      });
+
+      setMixingStep(100);
+      const note: DepositNote = {
+        ...result.note,
+        denomination: pool.denomination,
+        withdrawalStatus: "idle",
+        registrySnapshot: {
+          ...result.note.registrySnapshot,
+          authority: withdrawalAuthority,
+        },
+      };
+      await saveNoteToVault(note);
+      setVaultNotes(getNotesFromVault());
+      setLastDepositResult(result);
+      setStatusBanner({
+        tone: "success",
+        text:
+          result.status === "confirmed"
+            ? `Deposit session ${result.sessionId} prepared. The canonical vault note is saved and ready for proof generation.`
+            : `Deposit session ${result.sessionId} is still waiting on additional signatures, but the canonical note preview has been saved locally.`,
+      });
+    } catch (error) {
+      console.error("Deposit preparation failed:", error);
+      setStatusBanner({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Failed to prepare the deposit session.",
+      });
+      setIsMixing(false);
+      setMixingStep(0);
+    } finally {
+      setDepositBusy(false);
+    }
+  };
 
   const handlePrepareWithdrawal = async (note: DepositNote) => {
     const noteId = getNoteId(note);
@@ -235,12 +250,18 @@ export default function App() {
         merkleRoot: prepared.proof.publicInputs.merkleRoot,
         merkleProof: prepared.proof.witnessBundle.proof,
         leafIndex: prepared.proof.witnessBundle.proof.leafIndex,
+        proofEncoding: prepared.proof.proofEncoding ?? note.proofEncoding,
+        registrySnapshot: {
+          outPoint: prepared.transaction.inputs[0]?.previousOutput,
+          size: prepared.registrySize,
+          authority: prepared.transaction.submission.authorityMode,
+        },
         withdrawalStatus: "proof-ready",
         lastPreparedAt: preparedAt,
         lastPreparedMode: prepared.mode,
       };
 
-      updateNoteInVault(updatedNote);
+      await updateNoteInVault(updatedNote);
       setVaultNotes(getNotesFromVault());
       setPreparedWithdrawals(prev => ({
         ...prev,
@@ -254,8 +275,8 @@ export default function App() {
         tone: "success",
         text:
           prepared.mode === "aggron-preview"
-            ? "Groth16 proof generated in the browser and paired with the live Aggron nullifier registry."
-            : "Groth16 proof generated in the browser. Public config was incomplete, so a local preview transaction was prepared instead.",
+            ? "Groth16 proof generated in the browser and paired with the live Aggron registry metadata."
+            : "Groth16 proof generated in the browser. Runtime config is still in preview mode, so the transaction remains local-only.",
       });
     } catch (error) {
       setStatusBanner({
@@ -293,6 +314,12 @@ export default function App() {
         merkleRoot: prepared.proof.publicInputs.merkleRoot,
         merkleProof: prepared.proof.witnessBundle.proof,
         leafIndex: prepared.proof.witnessBundle.proof.leafIndex,
+        proofEncoding: prepared.proof.proofEncoding ?? note.proofEncoding,
+        registrySnapshot: {
+          outPoint: prepared.transaction.inputs[0]?.previousOutput,
+          size: prepared.registrySize,
+          authority: prepared.transaction.submission.authorityMode,
+        },
         withdrawalStatus: "submitted",
         lastPreparedAt: preparedAt,
         lastPreparedMode: prepared.mode,
@@ -300,7 +327,7 @@ export default function App() {
         lastBroadcastHash: txHash,
       };
 
-      updateNoteInVault(updatedNote);
+      await updateNoteInVault(updatedNote);
       setVaultNotes(getNotesFromVault());
       setPreparedWithdrawals(prev => ({
         ...prev,
@@ -400,15 +427,15 @@ export default function App() {
                   <Zap className="w-5 h-5 text-yellow-400" /> Active Pools
                 </h2>
                 <div className="text-xs uppercase tracking-[0.2em] text-gray-500">
-                  On-chain support today: 100 CT
+                  Runtime: {runtimeMode}
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {POOLS.map(pool => (
+                {pools.map(pool => (
                   <div
                     key={pool.denomination}
-                    className={`glass-card p-6 relative overflow-hidden group transition-all ${pool.live ? "cursor-pointer" : "opacity-60"} ${selectedPool === pool.denomination ? "border-[#00f2ff]" : ""}`}
-                    onClick={() => !isMixing && startMixing(pool)}
+                    className={`glass-card p-6 relative overflow-hidden group transition-all ${pool.available ? "cursor-pointer" : "opacity-60"} ${selectedPool === pool.denomination ? "border-[#00f2ff]" : ""}`}
+                    onClick={() => !depositBusy && void startMixing(pool)}
                   >
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                       <Lock className="w-12 h-12" />
@@ -422,7 +449,7 @@ export default function App() {
                           {pool.denomination} CT
                         </h3>
                       </div>
-                      <div className={`text-[10px] uppercase px-3 py-1 rounded-full border ${pool.live ? "border-emerald-400/30 text-emerald-300 bg-emerald-500/10" : "border-white/10 text-gray-400 bg-white/5"}`}>
+                      <div className={`text-[10px] uppercase px-3 py-1 rounded-full border ${pool.available ? "border-emerald-400/30 text-emerald-300 bg-emerald-500/10" : "border-white/10 text-gray-400 bg-white/5"}`}>
                         {pool.statusLabel}
                       </div>
                     </div>
@@ -444,7 +471,7 @@ export default function App() {
                         className="h-full bg-gradient-to-r from-[#00f2ff] to-[#7000ff]"
                         initial={{ width: 0 }}
                         animate={{
-                          width: `${(pool.participants / pool.maxParticipants) * 100}%`,
+                          width: `${pool.maxParticipants > 0 ? (pool.participants / pool.maxParticipants) * 100 : 0}%`,
                         }}
                       />
                     </div>
@@ -463,9 +490,9 @@ export default function App() {
                     Current Product Boundary
                   </h4>
                   <p className="text-sm text-gray-400 leading-relaxed">
-                    The contracts, SDK, and Aggron deployment currently enforce a single
-                    fixed denomination of 100 CT. This frontend now keeps the unsupported
-                    pools visible, but it blocks them so the UI matches the live backend.
+                    The current repo can now generate canonical deposit notes, browser-side Groth16 proofs,
+                    and withdrawal previews from one shared SDK shape. Deposit coordination is still a preview/demo
+                    flow until a real Aggron session coordinator and CT input sourcing are added.
                   </p>
                 </div>
               </div>
@@ -485,24 +512,29 @@ export default function App() {
                   <div className="w-20 h-20 bg-[#00f2ff]/10 rounded-full flex items-center justify-center mb-6 animate-pulse-slow">
                     <Lock className="w-10 h-10 text-[#00f2ff]" />
                   </div>
-                  <h2 className="text-2xl font-orbitron mb-4">Start Mixing</h2>
-                  <p className="text-gray-400 mb-8 max-w-xs">
-                    Join the live 100 CT pool to create a vault note that can later
-                    generate a Groth16 withdrawal proof directly in your browser.
+                  <h2 className="text-2xl font-orbitron mb-4">Prepare Deposit Note</h2>
+                  <p className="text-gray-400 mb-6 max-w-xs">
+                    Join the 100 CT flow to produce a canonical vault note that can later generate
+                    a Groth16 withdrawal proof directly in your browser.
+                  </p>
+                  <p className="text-xs text-gray-500 mb-8 max-w-sm">
+                    Runtime mode: <span className="text-gray-300">{runtimeMode}</span>. Withdrawal authority:
+                    <span className="text-gray-300"> {withdrawalAuthority}</span>.
                   </p>
                   {walletAddress ? (
                     <button
                       className="btn-primary w-full max-w-xs flex items-center justify-center gap-2"
-                      onClick={() => startMixing(POOLS[0])}
+                      onClick={() => void startMixing(pools[0])}
+                      disabled={depositBusy}
                     >
-                      Join 100 CT Pool <ArrowRight className="w-4 h-4" />
+                      {depositBusy ? "Preparing..." : "Join 100 CT Flow"} <ArrowRight className="w-4 h-4" />
                     </button>
                   ) : (
                     <button
                       className="btn-primary w-full max-w-xs flex items-center justify-center gap-2 opacity-80"
                       onClick={handleConnect}
                     >
-                      Connect Wallet to Join <Wallet className="w-4 h-4" />
+                      Connect Wallet to Begin <Wallet className="w-4 h-4" />
                     </button>
                   )}
                 </motion.div>
@@ -514,7 +546,7 @@ export default function App() {
                   className="glass-card p-8 h-full flex flex-col"
                 >
                   <h2 className="text-xl font-orbitron mb-8 flex items-center justify-between">
-                    <span>Mixing Session</span>
+                    <span>Deposit Preparation</span>
                     <span className="text-sm font-normal text-gray-500">
                       {selectedPoolState ? `${selectedPoolState.denomination} CT` : "Active"}
                     </span>
@@ -556,11 +588,11 @@ export default function App() {
 
                     <div className="space-y-4">
                       <MixingStep
-                        label="Collecting Inputs"
+                        label="Collecting Deposit Inputs"
                         status={mixingStep > 20 ? "done" : "active"}
                       />
                       <MixingStep
-                        label="Generating Stealth Outputs"
+                        label="Generating Stealth Output"
                         status={
                           mixingStep > 50
                             ? "done"
@@ -570,7 +602,7 @@ export default function App() {
                         }
                       />
                       <MixingStep
-                        label="Assembling Merkle Session Context"
+                        label="Building Session Commitments"
                         status={
                           mixingStep > 80
                             ? "done"
@@ -580,7 +612,7 @@ export default function App() {
                         }
                       />
                       <MixingStep
-                        label="Saving Vault Note"
+                        label="Saving Canonical Vault Note"
                         status={
                           mixingStep >= 100
                             ? "done"
@@ -629,18 +661,17 @@ export default function App() {
               </h2>
               <p className="text-sm text-gray-400 mt-2">
                 Generate a browser-side Groth16 proof from a saved deposit note and
-                prepare the withdrawal transaction against the live Aggron registry when
-                public runtime config is available.
+                prepare the withdrawal transaction against the configured runtime mode.
               </p>
             </div>
-            <div className={`text-sm px-4 py-3 rounded-xl border ${runtimeReady ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : "border-amber-400/30 bg-amber-500/10 text-amber-100"}`}>
+            <div className={`text-sm px-4 py-3 rounded-xl border ${runtimeReady ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : runtimeMode === "preview" ? "border-amber-400/30 bg-amber-500/10 text-amber-100" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`}>
               <div className="font-semibold">
-                {runtimeReady ? "Aggron Preview Ready" : "Local Preview Mode"}
+                {runtimeReady ? "Aggron Live Metadata Ready" : runtimeMode === "preview" ? "Preview Runtime Mode" : "Runtime Disabled"}
               </div>
               <div className="text-xs mt-1 opacity-80">
                 {runtimeReady
-                  ? "Public deployment pointers were found, so the app can pair proofs with the live nullifier registry."
-                  : runtimeStatus.error ?? "Missing public deployment env. Proofs still work locally, but the withdrawal transaction uses a preview registry."}
+                  ? "Deployment pointers were found, so the app can pair proofs with the live nullifier registry."
+                  : runtimeStatus.error ?? "Runtime config is incomplete, so withdrawals stay in local preview mode."}
               </div>
             </div>
           </div>
@@ -650,9 +681,9 @@ export default function App() {
               <Lock className="w-16 h-16 text-gray-700 mb-6" />
               <h3 className="text-xl font-orbitron mb-2 text-gray-300">No Deposit Notes Found</h3>
               <p className="text-gray-500 max-w-md">
-                Complete a 100 CT mix to save a note here. The vault now keeps the local
-                session commitments needed to generate a zero-knowledge withdrawal proof
-                in the browser.
+                Prepare a 100 CT deposit note to save it here. The vault now stores the
+                canonical note schema, proof-encoding metadata, and session commitments
+                required for browser-side proof generation.
               </p>
             </div>
           ) : (
@@ -686,7 +717,11 @@ export default function App() {
                         <span className="text-xs text-gray-300 font-mono truncate block">{note.commitment?.slice(0, 18)}...</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-gray-500 uppercase block">Local Anonymity Set</span>
+                        <span className="text-[10px] text-gray-500 uppercase block">Proof Encoding</span>
+                        <span className="text-xs text-gray-400">{note.proofEncoding ?? "unknown"}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-500 uppercase block">Session Size</span>
                         <span className="text-xs text-gray-400">
                           {note.sessionCommitments?.length ?? 1} commitments in this saved session
                         </span>
@@ -731,7 +766,7 @@ export default function App() {
 
                     {prepared?.mode === "local-preview" && (
                       <p className="text-xs text-amber-100/80">
-                        This note is only prepared for local preview right now. Load the Aggron runtime config before attempting a live broadcast.
+                        This note is only prepared for local preview right now. Switch the runtime config to live before attempting a broadcast.
                       </p>
                     )}
 
@@ -753,10 +788,16 @@ export default function App() {
                           <span className="text-[10px] text-gray-500 uppercase block">Merkle Root</span>
                           <span className="text-xs text-gray-300 font-mono break-all">{prepared.proof.publicInputs.merkleRoot}</span>
                         </div>
+                        <div>
+                          <span className="text-[10px] text-gray-500 uppercase block">Submission Mode</span>
+                          <span className="text-xs text-gray-300">
+                            {prepared.transaction.submission.runtimeMode} / {prepared.transaction.submission.authorityMode}
+                          </span>
+                        </div>
                         <div className="grid grid-cols-2 gap-3 text-xs text-gray-400">
                           <div>Session size: {prepared.sessionSize}</div>
                           <div>Registry entries: {prepared.registrySize}</div>
-                          <div>Witness bytes: {prepared.proof.serializedWitness.length}</div>
+                          <div>Witness bytes: {prepared.proof.snarkProof?.length ?? prepared.proof.serializedWitness.length}</div>
                           <div>Outputs: {prepared.transaction.outputs.length}</div>
                         </div>
                         {(prepared.broadcastTxHash || note.lastBroadcastHash) && (

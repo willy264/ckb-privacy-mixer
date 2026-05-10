@@ -87,6 +87,12 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
 
         const proof = await reconstructWithdrawalProof(note, this.denomination);
         const registryCell = await this.loadRegistryCell(config);
+        note.runtimeMode = config.runtimeMode;
+        note.registrySnapshot = {
+            outPoint: registryCell.outPoint,
+            size: registryCell.nullifiers.length,
+            authority: config.withdrawalAuthority,
+        };
         return {
             config,
             registryCell,
@@ -444,7 +450,15 @@ function parseRegistryNullifiers(dataHex: string): string[] {
         throw new Error(`Invalid nullifier registry data: ${dataHex}`);
     }
 
-    const count = Number.parseInt(normalized.slice(0, 8), 16);
+    // On-chain format is u32 LE — swap byte pairs before parsing as big-endian hex.
+    // e.g. LE bytes [03, 00, 00, 00] → hex "03000000" → swap to "00000003" → parseInt = 3
+    const leHex = normalized.slice(0, 8);
+    const beHex =
+        leHex.slice(6, 8) +
+        leHex.slice(4, 6) +
+        leHex.slice(2, 4) +
+        leHex.slice(0, 2);
+    const count = Number.parseInt(beHex, 16);
     if (Number.isNaN(count)) {
         throw new Error(`Invalid nullifier registry count: ${dataHex}`);
     }

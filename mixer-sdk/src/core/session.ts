@@ -1,24 +1,79 @@
+import * as crypto from 'crypto';
+
 // Mock types for CKB SDK compatibility
 export interface Cell {
     outPoint: string;
     amount: bigint;
-    blindingFactor?: string; // used for testing mock
+    blindingFactor?: string;
 }
 
 export interface Transaction {
-    inputs: any[];
-    outputs: any[];
+    inputs: Array<{ previousOutput: string }>;
+    outputs: Array<{ lock: string; capacity: string }>;
     witnesses: string[];
     isSigned: boolean;
 }
 
 export type SessionState = 'WAITING' | 'READY' | 'COMPLETED' | 'ABORTED';
 
+export interface DepositSessionSnapshot {
+    sessionId: string;
+    denomination: bigint;
+    participantCount: number;
+    requiredParticipants: number;
+    participantCommitments: string[];
+    participantOutputs: string[];
+    status: SessionState;
+}
+
+export interface DepositResult {
+    sessionId: string;
+    participantId: string;
+    status: 'pending' | 'confirmed';
+    confirmedTxHash?: string;
+    participantCommitments: string[];
+    stealthOutputAddress: string;
+    leafIndex: number;
+    inputOutPoint: string;
+    note: {
+        version: 2;
+        sessionId: string;
+        inputOutPoint: string;
+        blindingFactor: string;
+        stealthOutputAddress: string;
+        createdAt: number;
+        commitment: string;
+        sessionCommitments: string[];
+        leafIndex: number;
+        depositTxHash?: string;
+        runtimeMode: 'preview' | 'live';
+        proofEncoding: 'groth16-bn254-arkworks-uncompressed-v1';
+        registrySnapshot?: any;
+    };
+    session: DepositSessionSnapshot;
+}
+
 export interface MixParticipant {
     id: string;
     ctInputCell: Cell;
     stealthOutputAddress: string;
+    commitment?: string;
     signature?: string;
+}
+
+/** Generate a cryptographically secure random hex ID. */
+function cryptoRandomId(prefix: string): string {
+    return `${prefix}_${crypto.randomBytes(16).toString('hex')}`;
+}
+
+/** Fisher-Yates shuffle using a CSPRNG for unbiased output ordering. */
+function secureShuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(0, i + 1);
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
 }
 
 export class MixSession {
@@ -28,8 +83,8 @@ export class MixSession {
     public participants: MixParticipant[] = [];
     public state: SessionState = 'WAITING';
     private creationTime: number;
-    private readonly TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-    
+    private readonly TIMEOUT_MS = 5 * 60 * 1000;
+
     constructor(id: string, denomination: bigint, minParticipants: number) {
         this.id = id;
         this.denomination = denomination;
@@ -38,7 +93,7 @@ export class MixSession {
     }
 
     public static createSession(denomination: bigint, minParticipants: number): MixSession {
-        const id = `session_${Math.random().toString(36).substring(7)}`;
+        const id = cryptoRandomId('session');
         return new MixSession(id, denomination, minParticipants);
     }
 
@@ -47,16 +102,16 @@ export class MixSession {
         if (this.state !== 'WAITING') {
             throw new Error(`Cannot join session in state: ${this.state}`);
         }
-        
+
         if (ctInputCell.amount !== this.denomination) {
             throw new Error(`Invalid denomination. Expected ${this.denomination}`);
         }
 
-        const participantId = `p_${Math.random().toString(36).substring(7)}`;
+        const participantId = cryptoRandomId('p');
         this.participants.push({
             id: participantId,
             ctInputCell,
-            stealthOutputAddress
+            stealthOutputAddress,
         });
 
         if (this.participants.length >= this.minParticipants) {
@@ -72,40 +127,35 @@ export class MixSession {
             throw new Error(`Session not ready. Current state: ${this.state}`);
         }
 
-        // Output shuffling is required for anonymity
-        const shuffledParticipants = [...this.participants].sort(() => Math.random() - 0.5);
+        const shuffledParticipants = secureShuffleArray(this.participants);
 
-        const tx: Transaction = {
-            inputs: this.participants.map(p => ({
-                previousOutput: p.ctInputCell.outPoint
+        return {
+            inputs: this.participants.map(participant => ({
+                previousOutput: participant.ctInputCell.outPoint,
             })),
-            outputs: shuffledParticipants.map(p => ({
-                lock: p.stealthOutputAddress,
-                capacity: '1000'
+            outputs: shuffledParticipants.map(participant => ({
+                lock: participant.stealthOutputAddress,
+                capacity: '1000',
             })),
-            witnesses: this.participants.map(() => '0x'), // Placeholder for signatures
-            isSigned: false
+            witnesses: this.participants.map(() => '0x'),
+            isSigned: false,
         };
-
-        return tx;
     }
 
     public signAndSubmit(privateKey: string, participantId: string): Transaction | null {
         this.checkTimeout();
         if (this.state !== 'READY') {
-            throw new Error("Cannot sign unless session is READY");
+            throw new Error('Cannot sign unless session is READY');
         }
 
-        const participant = this.participants.find(p => p.id === participantId);
+        const participant = this.participants.find(item => item.id === participantId);
         if (!participant) {
-            throw new Error("Participant not found");
+            throw new Error('Participant not found');
         }
 
-        // Mock signing process
         participant.signature = `0x_sig_${privateKey.substring(0, 4)}`;
 
-        // If all signed, submit
-        const allSigned = this.participants.every(p => !!p.signature);
+        const allSigned = this.participants.every(item => !!item.signature);
         if (allSigned) {
             this.state = 'COMPLETED';
             const tx = this.buildTransaction();
@@ -113,7 +163,7 @@ export class MixSession {
             return tx;
         }
 
-        return null; // Waiting for others
+        return null;
     }
 
     public checkSessionStatus(): SessionState {
@@ -121,11 +171,21 @@ export class MixSession {
         return this.state;
     }
 
+    public getSnapshot(): DepositSessionSnapshot {
+        return {
+            sessionId: this.id,
+            denomination: this.denomination,
+            participantCount: this.participants.length,
+            requiredParticipants: this.minParticipants,
+            participantCommitments: this.participants.map(participant => participant.commitment ?? ''),
+            participantOutputs: this.participants.map(participant => participant.stealthOutputAddress),
+            status: this.state,
+        };
+    }
+
     private checkTimeout() {
-        if (this.state === 'WAITING' || this.state === 'READY') {
-            if (Date.now() - this.creationTime > this.TIMEOUT_MS) {
-                this.state = 'ABORTED';
-            }
+        if ((this.state === 'WAITING' || this.state === 'READY') && Date.now() - this.creationTime > this.TIMEOUT_MS) {
+            this.state = 'ABORTED';
         }
     }
 }

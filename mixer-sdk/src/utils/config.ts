@@ -3,6 +3,8 @@ import type {
     MixerRuntimeConfig,
     RegistryReference,
     ScriptHashType,
+    RuntimeMode,
+    WithdrawalAuthorityMode,
 } from '../types/config';
 
 export interface EnvLike {
@@ -64,7 +66,23 @@ function readOptionalRegistry(env: EnvLike): RegistryReference | undefined {
     };
 }
 
+function readRuntimeMode(env: EnvLike, hasRegistry: boolean): RuntimeMode {
+    const explicit = env.MIXER_RUNTIME_MODE as RuntimeMode | undefined;
+    if (explicit) {
+        return explicit;
+    }
+
+    return hasRegistry ? 'live' : 'preview';
+}
+
+function readWithdrawalAuthority(env: EnvLike): WithdrawalAuthorityMode {
+    return (env.MIXER_WITHDRAWAL_AUTHORITY as WithdrawalAuthorityMode | undefined)
+        ?? 'operator-registry-lock';
+}
+
 export function loadMixerRuntimeConfig(env: EnvLike): MixerRuntimeConfig {
+    const nullifierRegistry = readOptionalRegistry(env);
+
     return {
         ckbRpcUrl: requireEnv(env, 'CKB_RPC_URL'),
         ckbIndexerUrl: requireEnv(env, 'CKB_INDEXER_URL'),
@@ -74,6 +92,8 @@ export function loadMixerRuntimeConfig(env: EnvLike): MixerRuntimeConfig {
         stealthLock: readRequiredContract(env, 'STEALTH_LOCK'),
         ctTokenType: readRequiredContract(env, 'CT_TOKEN_TYPE'),
         ctInfoType: readOptionalContract(env, 'CT_INFO_TYPE'),
-        nullifierRegistry: readOptionalRegistry(env),
+        nullifierRegistry,
+        runtimeMode: readRuntimeMode(env, !!nullifierRegistry),
+        withdrawalAuthority: readWithdrawalAuthority(env),
     };
 }

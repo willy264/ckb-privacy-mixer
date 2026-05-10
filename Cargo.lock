@@ -2167,6 +2167,8 @@ dependencies = [
  "bulletproofs",
  "ckb-testtool",
  "curve25519-dalek",
+ "serde",
+ "serde_json",
  "sha2",
 ]
 

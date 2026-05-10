@@ -6,8 +6,6 @@ import {
   buildWithdrawTransaction,
   type CkbCellDep,
   type CkbTransaction,
-  deriveCommitment,
-  randomBlindingFactor,
   type LocalWithdrawalProofResult,
   type WithdrawalTransaction,
 } from 'mixer-sdk';
@@ -27,29 +25,6 @@ export interface PreparedVaultWithdrawal {
 
 export interface PrepareVaultWithdrawalOptions {
   recipientLock?: string;
-}
-
-export async function buildSessionCommitments(
-  userCommitment: string,
-  participantCount: number,
-) {
-  const sessionSize = Math.max(3, participantCount);
-  const leafIndex = Math.floor(Math.random() * sessionSize);
-  const commitments = await Promise.all(
-    Array.from({ length: sessionSize }, async (_, index) => {
-      if (index === leafIndex) {
-        return userCommitment;
-      }
-
-      const peerSessionId = `peer_${Date.now().toString(36)}_${index}_${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-
-      return deriveCommitment(randomBlindingFactor(), peerSessionId);
-    }),
-  );
-
-  return { commitments, leafIndex };
 }
 
 function resolveSessionCommitments(note: DepositNote) {
@@ -139,7 +114,11 @@ export async function prepareVaultWithdrawal(
     warnings.push(`${runtimeStatus.error} Using a local preview registry instead.`);
   }
 
-  if (liveConfig?.nullifierRegistry) {
+  if (runtimeStatus.authority === 'operator-registry-lock') {
+    warnings.push('Live broadcast requires the operator-controlled JoyID wallet that owns the nullifier registry lock.');
+  }
+
+  if (liveConfig?.nullifierRegistry && liveConfig.runtimeMode === 'live') {
     try {
       const provider = new AggronWithdrawalProvider({
         config: liveConfig,
@@ -173,7 +152,7 @@ export async function prepareVaultWithdrawal(
       );
     }
   } else if (liveConfig) {
-    warnings.push('Nullifier registry deployment values are missing, so this is a local preview transaction.');
+    warnings.push('Runtime config is not in live mode or is missing the nullifier registry, so this is a local preview transaction.');
   }
 
   const transaction = await buildWithdrawTransaction({
@@ -211,7 +190,7 @@ export async function broadcastPreparedWithdrawal(
 
   const runtimeStatus = tryLoadFrontendRuntimeConfig();
   const liveConfig = runtimeStatus.config;
-  if (!liveConfig?.nullifierRegistry) {
+  if (!liveConfig?.nullifierRegistry || liveConfig.runtimeMode !== 'live') {
     throw new Error(runtimeStatus.error ?? 'Missing live Aggron runtime config.');
   }
 

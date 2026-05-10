@@ -8,15 +8,20 @@ use ckb_testtool::ckb_types::{
     prelude::*,
 };
 use ckb_testtool::context::Context;
-use sha2::{Digest, Sha256};
+use serde::Deserialize;
+use std::fs;
+use std::path::PathBuf;
 
 const ERROR_INVALID_PROOF_DATA: i8 = 5;
 const ERROR_INVALID_CELL_COUNT: i8 = 6;
-const ERROR_INVALID_MERKLE_PATH: i8 = 7;
 const ERROR_INVALID_MERKLE_ROOT: i8 = 8;
-const ERROR_INVALID_NULLIFIER: i8 = 9;
 
-const HASH_BYTES: usize = 32;
+#[derive(Deserialize)]
+pub(crate) struct ProofJson {
+    pi_a: [String; 3],
+    pi_b: [[String; 2]; 3],
+    pi_c: [String; 3],
+}
 
 fn assert_script_error(result: Result<u64, ckb_testtool::ckb_error::Error>, expected_code: i8) {
     let err = result.expect_err("Expected transaction to fail but it succeeded");
@@ -30,88 +35,90 @@ fn assert_script_error(result: Result<u64, ckb_testtool::ckb_error::Error>, expe
     );
 }
 
-fn hash_with_prefix(prefix: u8, parts: &[&[u8]]) -> [u8; HASH_BYTES] {
-    let mut hasher = Sha256::new();
-    hasher.update([prefix]);
-    for part in parts {
-        hasher.update(part);
+fn repo_root() -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.pop();
+    path
+}
+
+fn read_public_inputs_bytes() -> Bytes {
+    let path = repo_root().join("circuits").join("public.json");
+    let signals = serde_json::from_str::<Vec<String>>(&fs::read_to_string(path).unwrap()).unwrap();
+    let mut bytes = Vec::with_capacity(64);
+    for signal in signals.into_iter().take(2) {
+      let value = BigIntBytes::from_decimal_string(&signal);
+      bytes.extend_from_slice(&value.to_le_bytes_32());
     }
-    hasher.finalize().into()
+    Bytes::from(bytes)
 }
 
-fn hash_leaf(commitment: &[u8; HASH_BYTES]) -> [u8; HASH_BYTES] {
-    hash_with_prefix(0, &[commitment])
+fn read_proof_bytes() -> Bytes {
+    let path = repo_root().join("circuits").join("proof.json");
+    let proof = serde_json::from_str::<ProofJson>(&fs::read_to_string(path).unwrap()).unwrap();
+    Bytes::from(pack_proof_bytes(&proof))
 }
 
-fn hash_node(left: &[u8; HASH_BYTES], right: &[u8; HASH_BYTES]) -> [u8; HASH_BYTES] {
-    hash_with_prefix(1, &[left, right])
-}
+pub(crate) struct BigIntBytes([u8; 32]);
 
-fn derive_nullifier(blinding_factor: &[u8; HASH_BYTES], session_id: &[u8]) -> [u8; HASH_BYTES] {
-    hash_with_prefix(2, &[blinding_factor, session_id])
-}
-
-fn build_merkle_root(commitments: &[[u8; HASH_BYTES]]) -> Vec<Vec<[u8; HASH_BYTES]>> {
-    let mut levels = vec![commitments.iter().map(hash_leaf).collect::<Vec<_>>()];
-    while levels.last().unwrap().len() > 1 {
-        let current = levels.last().unwrap();
-        let mut next = Vec::new();
-        for i in (0..current.len()).step_by(2) {
-            let left = current[i];
-            let right = *current.get(i + 1).unwrap_or(&current[i]);
-            next.push(hash_node(&left, &right));
+impl BigIntBytes {
+    pub(crate) fn from_decimal_string(value: &str) -> Self {
+        let bigint = value.parse::<u128>().ok();
+        if let Some(small) = bigint {
+            let mut out = [0u8; 32];
+            out[..16].copy_from_slice(&small.to_le_bytes());
+            return Self(out);
         }
-        levels.push(next);
+
+        let mut decimal = value
+            .bytes()
+            .map(|byte| byte - b'0')
+            .collect::<Vec<_>>();
+        let mut out = [0u8; 32];
+        for byte in &mut out {
+            let mut carry = 0u16;
+            for digit in &mut decimal {
+                let current = carry * 10 + u16::from(*digit);
+                *digit = (current / 256) as u8;
+                carry = current % 256;
+            }
+            *byte = carry as u8;
+            while decimal.first() == Some(&0) {
+                decimal.remove(0);
+                if decimal.is_empty() {
+                    break;
+                }
+            }
+            if decimal.is_empty() {
+                break;
+            }
+        }
+        Self(out)
     }
-    levels
+
+    pub(crate) fn to_le_bytes_32(&self) -> [u8; 32] {
+        self.0
+    }
 }
 
-fn generate_proof(
-    commitments: &[[u8; HASH_BYTES]],
-    leaf_index: usize,
-) -> ([u8; HASH_BYTES], Vec<[u8; HASH_BYTES]>, Vec<u8>) {
-    let levels = build_merkle_root(commitments);
-    let root = levels.last().unwrap()[0];
-    let mut siblings = Vec::new();
-    let mut directions = Vec::new();
-    let mut index = leaf_index;
-
-    for level in &levels[..levels.len() - 1] {
-        let is_right = index % 2 == 1;
-        let sibling_index = if is_right { index - 1 } else { index + 1 };
-        let sibling = *level.get(sibling_index).unwrap_or(&level[index]);
-        siblings.push(sibling);
-        directions.push(if is_right { 1 } else { 0 });
-        index /= 2;
-    }
-
-    (root, siblings, directions)
+fn pack_decimal_32(value: &str, out: &mut Vec<u8>) {
+    out.extend_from_slice(&BigIntBytes::from_decimal_string(value).to_le_bytes_32());
 }
 
-fn encode_witness(
-    session_id: &[u8],
-    commitment: &[u8; HASH_BYTES],
-    blinding_factor: &[u8; HASH_BYTES],
-    leaf_index: u32,
-    siblings: &[[u8; HASH_BYTES]],
-    directions: &[u8],
-) -> Bytes {
-    let mut data = Vec::new();
-    data.extend_from_slice(&(session_id.len() as u32).to_le_bytes());
-    data.extend_from_slice(session_id);
-    data.extend_from_slice(commitment);
-    data.extend_from_slice(blinding_factor);
-    data.extend_from_slice(&leaf_index.to_le_bytes());
-    data.extend_from_slice(&(siblings.len() as u32).to_le_bytes());
-    for sibling in siblings {
-        data.extend_from_slice(sibling);
-    }
-    data.extend_from_slice(directions);
-    Bytes::from(data)
+pub(crate) fn pack_proof_bytes(proof: &ProofJson) -> Vec<u8> {
+    let mut out = Vec::with_capacity(256);
+    pack_decimal_32(&proof.pi_a[0], &mut out);
+    pack_decimal_32(&proof.pi_a[1], &mut out);
+    pack_decimal_32(&proof.pi_b[0][1], &mut out);
+    pack_decimal_32(&proof.pi_b[0][0], &mut out);
+    pack_decimal_32(&proof.pi_b[1][1], &mut out);
+    pack_decimal_32(&proof.pi_b[1][0], &mut out);
+    pack_decimal_32(&proof.pi_c[0], &mut out);
+    pack_decimal_32(&proof.pi_c[1], &mut out);
+    out
 }
 
 fn build_zk_membership_context(
-    public_inputs: [u8; HASH_BYTES * 2],
+    public_inputs: Bytes,
     witness_data: Bytes,
     duplicate_output: bool,
 ) -> (Context, TransactionView) {
@@ -150,7 +157,7 @@ fn build_zk_membership_context(
             .type_(Some(verifier_script.clone()).pack())
             .build(),
     ];
-    let mut outputs_data = vec![Bytes::from(public_inputs.to_vec())];
+    let mut outputs_data = vec![public_inputs];
 
     if duplicate_output {
         outputs.push(
@@ -160,7 +167,7 @@ fn build_zk_membership_context(
                 .type_(Some(verifier_script).pack())
                 .build(),
         );
-        outputs_data.push(Bytes::from(public_inputs.to_vec()));
+        outputs_data.push(Bytes::new());
     }
 
     let witness = WitnessArgs::new_builder()
@@ -171,161 +178,48 @@ fn build_zk_membership_context(
         .cell_deps(vec![verifier_script_dep, always_success_script_dep])
         .inputs(vec![CellInput::new_builder().previous_output(input_out_point).build()])
         .outputs(outputs)
-        .outputs_data(outputs_data.into_iter().map(|d| d.pack()).collect::<Vec<_>>())
+        .outputs_data(outputs_data.into_iter().map(|data| data.pack()).collect::<Vec<_>>())
         .witnesses(vec![witness.as_bytes().pack()])
         .build();
 
     (context, tx)
 }
 
-fn sample_commitment(byte: u8) -> [u8; HASH_BYTES] {
-    [byte; HASH_BYTES]
-}
-
 #[test]
-fn test_zk_membership_valid_proof() {
-    let commitments = [
-        sample_commitment(1),
-        sample_commitment(2),
-        sample_commitment(3),
-        sample_commitment(4),
-    ];
-    let session_id = b"session_c";
-    let blinding_factor = sample_commitment(42);
-    let leaf_index = 2usize;
-    let (root, siblings, directions) = generate_proof(&commitments, leaf_index);
-    let nullifier = derive_nullifier(&blinding_factor, session_id);
-
-    let mut public_inputs = [0u8; HASH_BYTES * 2];
-    public_inputs[..HASH_BYTES].copy_from_slice(&root);
-    public_inputs[HASH_BYTES..].copy_from_slice(&nullifier);
-
-    let witness_data = encode_witness(
-        session_id,
-        &commitments[leaf_index],
-        &blinding_factor,
-        leaf_index as u32,
-        &siblings,
-        &directions,
-    );
+fn test_zk_membership_valid_groth16_fixture() {
+    let public_inputs = read_public_inputs_bytes();
+    let witness_data = read_proof_bytes();
     let (context, tx) = build_zk_membership_context(public_inputs, witness_data, false);
     let result = context.verify_tx(&tx, 100_000_000);
-    if result.is_err() {
-        panic!("Expected success but got: {:?}", result.unwrap_err());
+    if let Err(error) = result {
+        panic!("Expected success but got: {:?}", error);
     }
 }
 
 #[test]
-fn test_zk_membership_invalid_root() {
-    let commitments = [sample_commitment(1), sample_commitment(2)];
-    let session_id = b"session_a";
-    let blinding_factor = sample_commitment(33);
-    let leaf_index = 1usize;
-    let (root, siblings, directions) = generate_proof(&commitments, leaf_index);
-    let nullifier = derive_nullifier(&blinding_factor, session_id);
-
-    let mut public_inputs = [0u8; HASH_BYTES * 2];
-    public_inputs[..HASH_BYTES].copy_from_slice(&root);
-    public_inputs[0] ^= 0xff;
-    public_inputs[HASH_BYTES..].copy_from_slice(&nullifier);
-
-    let witness_data = encode_witness(
-        session_id,
-        &commitments[leaf_index],
-        &blinding_factor,
-        leaf_index as u32,
-        &siblings,
-        &directions,
-    );
-    let (context, tx) = build_zk_membership_context(public_inputs, witness_data, false);
-    let result = context.verify_tx(&tx, 100_000_000);
-    assert_script_error(result, ERROR_INVALID_MERKLE_ROOT);
-}
-
-#[test]
-fn test_zk_membership_invalid_nullifier() {
-    let commitments = [sample_commitment(1), sample_commitment(2)];
-    let session_id = b"session_a";
-    let blinding_factor = sample_commitment(33);
-    let leaf_index = 0usize;
-    let (root, siblings, directions) = generate_proof(&commitments, leaf_index);
-    let nullifier = derive_nullifier(&blinding_factor, session_id);
-
-    let mut public_inputs = [0u8; HASH_BYTES * 2];
-    public_inputs[..HASH_BYTES].copy_from_slice(&root);
-    public_inputs[HASH_BYTES..].copy_from_slice(&nullifier);
-    public_inputs[HASH_BYTES] ^= 0xff;
-
-    let witness_data = encode_witness(
-        session_id,
-        &commitments[leaf_index],
-        &blinding_factor,
-        leaf_index as u32,
-        &siblings,
-        &directions,
-    );
-    let (context, tx) = build_zk_membership_context(public_inputs, witness_data, false);
-    let result = context.verify_tx(&tx, 100_000_000);
-    assert_script_error(result, ERROR_INVALID_NULLIFIER);
-}
-
-#[test]
-fn test_zk_membership_invalid_path_direction() {
-    let commitments = [sample_commitment(1), sample_commitment(2), sample_commitment(3)];
-    let session_id = b"session_b";
-    let blinding_factor = sample_commitment(55);
-    let leaf_index = 2usize;
-    let (root, siblings, mut directions) = generate_proof(&commitments, leaf_index);
-    directions[0] = 1;
-    let nullifier = derive_nullifier(&blinding_factor, session_id);
-
-    let mut public_inputs = [0u8; HASH_BYTES * 2];
-    public_inputs[..HASH_BYTES].copy_from_slice(&root);
-    public_inputs[HASH_BYTES..].copy_from_slice(&nullifier);
-
-    let witness_data = encode_witness(
-        session_id,
-        &commitments[leaf_index],
-        &blinding_factor,
-        leaf_index as u32,
-        &siblings,
-        &directions,
-    );
-    let (context, tx) = build_zk_membership_context(public_inputs, witness_data, false);
-    let result = context.verify_tx(&tx, 100_000_000);
-    assert_script_error(result, ERROR_INVALID_MERKLE_PATH);
-}
-
-#[test]
-fn test_zk_membership_malformed_witness() {
-    let public_inputs = [0u8; HASH_BYTES * 2];
-    let witness_data = Bytes::from(vec![1u8, 2u8, 3u8]);
-    let (context, tx) = build_zk_membership_context(public_inputs, witness_data, false);
+fn test_zk_membership_invalid_proof_bytes_fail() {
+    let public_inputs = read_public_inputs_bytes();
+    let mut witness_data = read_proof_bytes().to_vec();
+    witness_data[0] ^= 0xff;
+    let (context, tx) = build_zk_membership_context(public_inputs, Bytes::from(witness_data), false);
     let result = context.verify_tx(&tx, 100_000_000);
     assert_script_error(result, ERROR_INVALID_PROOF_DATA);
 }
 
 #[test]
+fn test_zk_membership_wrong_public_input_order_fails() {
+    let mut public_inputs = read_public_inputs_bytes().to_vec();
+    public_inputs[..32].reverse();
+    let witness_data = read_proof_bytes();
+    let (context, tx) = build_zk_membership_context(Bytes::from(public_inputs), witness_data, false);
+    let result = context.verify_tx(&tx, 100_000_000);
+    assert_script_error(result, ERROR_INVALID_MERKLE_ROOT);
+}
+
+#[test]
 fn test_zk_membership_invalid_cell_count() {
-    let commitments = [sample_commitment(1), sample_commitment(2)];
-    let session_id = b"session_a";
-    let blinding_factor = sample_commitment(33);
-    let leaf_index = 0usize;
-    let (root, siblings, directions) = generate_proof(&commitments, leaf_index);
-    let nullifier = derive_nullifier(&blinding_factor, session_id);
-
-    let mut public_inputs = [0u8; HASH_BYTES * 2];
-    public_inputs[..HASH_BYTES].copy_from_slice(&root);
-    public_inputs[HASH_BYTES..].copy_from_slice(&nullifier);
-
-    let witness_data = encode_witness(
-        session_id,
-        &commitments[leaf_index],
-        &blinding_factor,
-        leaf_index as u32,
-        &siblings,
-        &directions,
-    );
+    let public_inputs = read_public_inputs_bytes();
+    let witness_data = read_proof_bytes();
     let (context, tx) = build_zk_membership_context(public_inputs, witness_data, true);
     let result = context.verify_tx(&tx, 100_000_000);
     assert_script_error(result, ERROR_INVALID_CELL_COUNT);

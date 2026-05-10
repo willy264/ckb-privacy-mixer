@@ -5,6 +5,8 @@ type EnvRecord = Record<string, string | undefined>;
 export interface FrontendRuntimeStatus {
   config: MixerRuntimeConfig | null;
   error?: string;
+  mode: 'disabled' | 'preview' | 'live';
+  authority: 'operator-registry-lock' | 'self-custodied' | 'coordinator';
 }
 
 function collectEnv(): EnvRecord {
@@ -19,11 +21,18 @@ function collectEnv(): EnvRecord {
 
 export function tryLoadFrontendRuntimeConfig(): FrontendRuntimeStatus {
   try {
-    return { config: loadMixerRuntimeConfig(collectEnv()) };
+    const config = loadMixerRuntimeConfig(collectEnv());
+    return {
+      config,
+      mode: config.runtimeMode,
+      authority: config.withdrawalAuthority,
+    };
   } catch (error) {
     return {
       config: null,
       error: error instanceof Error ? error.message : 'Unable to read runtime config.',
+      mode: 'disabled',
+      authority: 'operator-registry-lock',
     };
   }
 }

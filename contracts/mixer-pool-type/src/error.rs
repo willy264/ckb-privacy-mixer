@@ -7,6 +7,7 @@ pub enum Error {
     LengthNotEnough = 3,
     Encoding = 4,
     InvalidDenomination = 5,
+    InvalidWitness = 6,
     InsufficientParticipants = 7,
     InvalidOutputLock = 8,
     InputOutputMismatch = 9,

@@ -4,28 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@ckb-lumos/lumos": "^0.22.0",
-    "@nervosnetwork/ckb-sdk-core": "0.109.5",
-    "circomlibjs": "^0.1.7",
-    "dotenv": "^16.4.5",
-    "framer-motion": "^11.11.0",
-    "lucide-react": "^0.454.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.3",
-    "snarkjs": "^0.7.6",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.10"
+    "dev": "pnpm --filter frontend dev",
+    "build": "pnpm --filter mixer-sdk build && pnpm --filter frontend build",
+    "build:frontend": "pnpm --filter frontend build",
+    "build:sdk": "pnpm --filter mixer-sdk build",
+    "preview": "pnpm --filter frontend preview",
+    "test:contracts": "cargo test --locked -p tests -j 1"
   }
 }

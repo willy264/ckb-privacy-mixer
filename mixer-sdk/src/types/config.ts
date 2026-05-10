@@ -17,6 +17,9 @@ export interface RegistryReference {
     typeArgs?: string;
 }
 
+export type RuntimeMode = 'disabled' | 'preview' | 'live';
+export type WithdrawalAuthorityMode = 'operator-registry-lock' | 'self-custodied' | 'coordinator';
+
 export interface MixerRuntimeConfig {
     ckbRpcUrl: string;
     ckbIndexerUrl: string;
@@ -27,4 +30,6 @@ export interface MixerRuntimeConfig {
     ctTokenType: ContractReference;
     ctInfoType?: ContractReference;
     nullifierRegistry?: RegistryReference;
+    runtimeMode: RuntimeMode;
+    withdrawalAuthority: WithdrawalAuthorityMode;
 }

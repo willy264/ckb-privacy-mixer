@@ -2,20 +2,23 @@ import * as crypto from 'crypto';
 import type { DepositNote } from '../types/note';
 import type {
     MerkleTreeSnapshot,
+    PackedGroth16Proof,
     WithdrawalPublicInputs,
     WithdrawalWitnessBundle,
 } from '../types/proof';
 import { deriveNullifier } from './crypto';
 import { bytesToHex, concatBytes, hexToBytes, u32LeBytes, utf8ToBytes } from './encoding';
 import { generateMerkleProof, verifyMerkleProof } from './merkle';
-import { generateProof, packProofForContract } from './prover';
+import { generateProof, packGroth16Proof, GROTH16_PROOF_ENCODING } from './prover';
 
 export interface LocalWithdrawalProofResult {
     publicInputs: WithdrawalPublicInputs;
     witnessBundle: WithdrawalWitnessBundle;
     serializedWitness: Uint8Array;
     proofValid: boolean;
-    snarkProof?: Uint8Array; // Real Groth16 proof
+    packedGroth16Proof?: PackedGroth16Proof;
+    snarkProof?: Uint8Array;
+    proofEncoding?: typeof GROTH16_PROOF_ENCODING;
 }
 
 export interface Groth16ArtifactPaths {
@@ -134,6 +137,7 @@ export async function reconstructWithdrawalProof(
         witnessBundle,
         serializedWitness: serializeMembershipWitness(witnessBundle),
         proofValid: await verifyMerkleProof(note.merkleProof),
+        proofEncoding: note.proofEncoding,
     };
 }
 
@@ -165,29 +169,31 @@ export async function buildRealWithdrawalProof(
     artifacts?: Groth16ArtifactPaths,
 ): Promise<LocalWithdrawalProofResult> {
     const base = await buildWithdrawalProof(note, tree, leafIndex, denomination);
-    
-    // Prepare input for snarkjs
-    // sessionId needs to be field element
-    const sid = note.sessionId.startsWith('0x') 
-        ? BigInt(note.sessionId) 
-        : BigInt('0x' + crypto.createHash('sha256').update(note.sessionId).digest('hex')) % 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+    const sid = note.sessionId.startsWith('0x')
+        ? BigInt(note.sessionId)
+        : BigInt(`0x${crypto.createHash('sha256').update(note.sessionId).digest('hex')}`)
+              % 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
     const input = {
         root: BigInt(tree.root),
         nullifierHash: BigInt(base.publicInputs.nullifier),
         blindingFactor: BigInt(note.blindingFactor),
         sessionId: sid,
-        pathElements: base.witnessBundle.proof.siblings.map(s => BigInt(s)),
-        pathIndices: base.witnessBundle.proof.pathDirections.map(d => d === 'left' ? 0 : 1)
+        pathElements: base.witnessBundle.proof.siblings.map(value => BigInt(value)),
+        pathIndices: base.witnessBundle.proof.pathDirections.map(direction => (direction === 'left' ? 0 : 1)),
     };
 
     const { wasmPath, zkeyPath } = resolveGroth16Artifacts(artifacts);
-
     const { proof } = await generateProof(input, wasmPath, zkeyPath);
-    const snarkProof = packProofForContract(proof);
+    const packedGroth16Proof = packGroth16Proof(proof);
+
+    note.proofEncoding = packedGroth16Proof.encoding;
 
     return {
         ...base,
-        snarkProof
+        packedGroth16Proof,
+        snarkProof: packedGroth16Proof.bytes,
+        proofEncoding: packedGroth16Proof.encoding,
     };
 }

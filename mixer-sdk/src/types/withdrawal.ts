@@ -1,6 +1,11 @@
 import type { LocalWithdrawalProofResult } from '../utils/proof';
 import type { DepositNote } from './note';
-import type { ContractReference, MixerRuntimeConfig } from './config';
+import type {
+    ContractReference,
+    MixerRuntimeConfig,
+    RuntimeMode,
+    WithdrawalAuthorityMode,
+} from './config';
 import type { WithdrawalPublicInputs } from './proof';
 
 export interface WithdrawalResolution {
@@ -95,6 +100,12 @@ export interface JoyIdSigningRequest {
     signerAddress: string;
 }
 
+export interface WithdrawalSubmissionContext {
+    runtimeMode: RuntimeMode;
+    authorityMode: WithdrawalAuthorityMode;
+    requiresOperatorRegistrySigner: boolean;
+}
+
 export interface WithdrawalRawTransaction {
     version: '0x0';
     cellDeps: WithdrawalCellDep[];
@@ -125,6 +136,7 @@ export interface WithdrawalTransaction {
     updatedRegistry: string[];
     isSigned: boolean;
     signature?: string;
+    submission: WithdrawalSubmissionContext;
 }
 
 export interface LiveWithdrawalBuildParams {

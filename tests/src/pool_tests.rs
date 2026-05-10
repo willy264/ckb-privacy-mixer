@@ -13,6 +13,7 @@ use curve25519_dalek::scalar::Scalar;
 
 // These must match error.rs in contracts/mixer-pool-type/src/error.rs
 const ERROR_INVALID_DENOMINATION: i8 = 5;
+const ERROR_INVALID_WITNESS: i8 = 6;
 const ERROR_INSUFFICIENT_PARTICIPANTS: i8 = 7;
 const ERROR_INVALID_OUTPUT_LOCK: i8 = 8;
 
@@ -29,7 +30,14 @@ fn assert_script_error(result: Result<u64, ckb_testtool::ckb_error::Error>, expe
     );
 }
 
-/// Builds a CoinJoin test transaction.
+/// Generates a unique blinding factor per participant index so each participant
+/// uses their own secret, matching the new witness-based validation in the contract.
+fn blinding_factor_for(index: usize) -> Scalar {
+    // Use a different scalar for each participant: 100 + index
+    Scalar::from((100 + index) as u64)
+}
+
+/// Builds a CoinJoin test transaction with per-participant blinding factors.
 ///
 /// - `input_amounts`: denominations for each input cell
 /// - `output_amounts`: denominations for each output cell
@@ -65,12 +73,12 @@ fn build_test_context(
     let stealth_script_dep = CellDep::new_builder().out_point(stealth_dep.clone()).build();
 
     let pc_gens = PedersenGens::default();
-    let bf = Scalar::from(42u64); // fixed test blinding factor matching the contract constant
 
-    // Build inputs — each gets a unique outpoint via context.create_cell()
+    // Build inputs — each participant gets a unique blinding factor
     let mut inputs = vec![];
-    let mut witnesses = vec![];
-    for &amount in input_amounts {
+    let mut input_witnesses = vec![];
+    for (idx, &amount) in input_amounts.iter().enumerate() {
+        let bf = blinding_factor_for(idx);
         let commitment = pc_gens.commit(Scalar::from(amount), bf).compress();
         let cell = CellOutput::new_builder()
             .capacity(1000u64)
@@ -82,13 +90,17 @@ fn build_test_context(
         let witness = WitnessArgs::new_builder()
             .input_type(Some(Bytes::from(bf.to_bytes().to_vec())).pack())
             .build();
-        witnesses.push(witness.as_bytes());
+        input_witnesses.push(witness.as_bytes());
     }
 
-    // Build outputs — stealth lock for the first N, always-success for the rest
+    // Build outputs — each output also gets a unique blinding factor.
+    // Output blinding factors are stored in extra witnesses appended after input witnesses.
     let mut outputs = vec![];
     let mut outputs_data = vec![];
+    let mut output_witnesses = vec![];
     for (i, &amount) in output_amounts.iter().enumerate() {
+        // Use a distinct blinding factor range for outputs (offset by input count)
+        let bf = blinding_factor_for(input_amounts.len() + i);
         let commitment = pc_gens.commit(Scalar::from(amount), bf).compress();
         let lock = if i < stealth_output_count {
             // Stealth lock: args must be exactly 53 bytes (P || Q')
@@ -110,8 +122,12 @@ fn build_test_context(
         let witness = WitnessArgs::new_builder()
             .output_type(Some(Bytes::from(bf.to_bytes().to_vec())).pack())
             .build();
-        witnesses.push(witness.as_bytes());
+        output_witnesses.push(witness.as_bytes());
     }
+
+    // Witnesses: [input_0_witness, ..., input_N_witness, output_0_witness, ..., output_M_witness]
+    let mut all_witnesses = input_witnesses;
+    all_witnesses.extend(output_witnesses);
 
     let tx = TransactionBuilder::default()
         .cell_deps(vec![
@@ -122,7 +138,7 @@ fn build_test_context(
         .inputs(inputs)
         .outputs(outputs)
         .outputs_data(outputs_data.into_iter().map(|d| d.pack()).collect::<Vec<_>>())
-        .witnesses(witnesses.into_iter().map(|w| w.pack()).collect::<Vec<_>>())
+        .witnesses(all_witnesses.into_iter().map(|w| w.pack()).collect::<Vec<_>>())
         .build();
 
     (context, tx)

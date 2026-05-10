@@ -57,7 +57,13 @@ function resolveRecipientLock(note: DepositNote, recipientLock?: string): string
 }
 
 function serializeRegistryDataHex(nullifiers: string[]): string {
-    const countHex = nullifiers.length.toString(16).padStart(8, '0');
+    // On-chain format is u32 LE — write count as little-endian
+    const n = nullifiers.length;
+    const b0 = (n & 0xff).toString(16).padStart(2, '0');
+    const b1 = ((n >> 8) & 0xff).toString(16).padStart(2, '0');
+    const b2 = ((n >> 16) & 0xff).toString(16).padStart(2, '0');
+    const b3 = ((n >> 24) & 0xff).toString(16).padStart(2, '0');
+    const countHex = `${b0}${b1}${b2}${b3}`;
     return `0x${countHex}${nullifiers.join('')}`;
 }
 
@@ -111,10 +117,10 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
 
     const updatedRegistry = [...currentRegistry, normalizedNullifier];
     const verifierOutputDataHex = `0x${serializeWithdrawalPublicInputsHex(proof.publicInputs)}`;
-    
-    // Use the real SNARK proof if available, otherwise fallback to the mock witness bundle
-    const proofBytes = proof.snarkProof ?? proof.serializedWitness;
+    const proofBytes = proof.packedGroth16Proof?.bytes ?? proof.snarkProof ?? proof.serializedWitness;
     const proofWitnessHex = `0x${Array.from(proofBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
+    const runtimeMode = note.runtimeMode ?? (registryCell.outPoint.startsWith('local-preview:') ? 'preview' : 'live');
+    const authorityMode = note.registrySnapshot?.authority ?? 'operator-registry-lock';
 
     return {
         rawTransaction: {
@@ -201,6 +207,11 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
         updatedRegistry,
         isSigned: !!privateKey,
         signature: privateKey ? `0x_withdraw_sig_${privateKey.slice(0, 8)}` : undefined,
+        submission: {
+            runtimeMode,
+            authorityMode,
+            requiresOperatorRegistrySigner: authorityMode === 'operator-registry-lock',
+        },
     };
 }
 
@@ -212,7 +223,7 @@ export async function prepareLiveWithdrawTransaction(
 
     if (isProviderExecutionParams(params)) {
         const resolution = await params.provider.resolveWithdrawal(note);
-        return await buildWithdrawTransaction({
+        return buildWithdrawTransaction({
             note,
             registryCell: resolution.registryCell,
             proof: resolution.proof,
@@ -234,7 +245,7 @@ export async function prepareLiveWithdrawTransaction(
         });
     }
 
-    return await buildWithdrawTransaction({
+    return buildWithdrawTransaction({
         note,
         ...params,
     });

@@ -1,49 +1,44 @@
-# CKB Privacy Mixer 🛡️
+# CKB Privacy Mixer
 
-A standalone, trustless CoinJoin-like protocol built on the **Nervos CKB** testnet. It leverages the existing deployed [Obscell](https://github.com/quake/obscell) privacy infrastructure to break the on-chain link between senders and receivers.
+A privacy-mixer prototype for the Nervos CKB testnet built around three layers:
 
-## Project Architecture
+1. `contracts/`: Rust CKB contracts for the pool, nullifier registry, and Groth16 verifier.
+2. `mixer-sdk/`: the canonical TypeScript protocol/runtime layer.
+3. `frontend/`: the only supported web UI.
 
-This repository contains the unique logic required for the mixer operation:
-1. **`contracts/`**: The Rust smart contract (`mixer-pool-type`) that verifies CoinJoin invariants (fixed denominations, anonymity sets). 
-2. **`mixer-sdk/`**: A TypeScript protocol SDK for negotiating mixer sessions and building transactions.
-3. **`frontend/`**: The React/Vite web interface.
-4. **`tests/`**: Simulated integration tests using `ckb-testtool`.
+The repo now treats the root `src/` Vite app as legacy and unsupported. New product work should happen in `frontend/` and `mixer-sdk/`.
 
-> [!IMPORTANT]
-> **No Obscell Source Code:** This project operates strictly as a consumer of Obscell. It does *not* include the source code for stealth addresses (`stealth-lock`), confidential tokens (`ct-token-type`), or info cells (`ct-info-type`). Instead, it references their officially deployed **testnet addresses** dynamically. 
+## Current Product Boundary
 
-## Obtaining Obscell Contract Addresses
+- Supported denomination: `100 CT`
+- Deposit path: canonical note preparation and preview/demo session coordination
+- Withdrawal path: browser-side Groth16 proof generation plus preview/live transaction assembly
+- Live withdrawal authority: by default the nullifier registry is operator-controlled, so the connected JoyID wallet must own that registry lock for browser-side broadcast
 
-Before deploying or running live scripts, you must configure your `.env` file with Obscell's deployed Testnet pointers.
-1. Copy `.env.example` to `.env`.
-2. Locate the official testnet deployment hashes from the [Obscell repository documentation](https://github.com/quake/obscell).
-3. Fill in the `STEALTH_LOCK_CODE_HASH`, `CT_TOKEN_TYPE_CODE_HASH`, and `CT_INFO_TYPE_CODE_HASH` variables.
+## Tooling
 
-## Building and Deploying the Mixer Contract
+- Rust contracts require nightly Cargo because the workspace uses `panic-immediate-abort`.
+- Web work runs through the PNPM workspace:
+  - `pnpm build`
+  - `pnpm dev`
+- Contract tests run with:
+  - `cargo test --locked -p tests -j 1`
 
-To compile the `mixer-pool-type` RISC-V binary, you need Rust configured for the CKB target.
+## Runtime Config
 
-```bash
-# Compile contracts for CKB RISC-V target
-make build-contracts
-```
-Once compiled (the binary will be in `target/riscv64imac-unknown-none-elf/release/mixer-pool-type`), deploy it to the testnet using a standard CKB deployment tool (like CKB-CLI or Lumos) and record its `TX_HASH` and `CODE_HASH` in your `.env` file.
+Copy `.env.example` to `.env` and fill the deployment pointers. The frontend will treat runtime as:
 
-## Running Tests
+- `preview` when contracts are configured but live registry pointers are incomplete
+- `live` when the nullifier registry is configured
+- `disabled` when the required contract references are missing
 
-Tests use `ckb-testtool` to mock the CKB environment locally and verify our contract logic against mocked Obscell primitive responses.
+Important env values:
 
-```bash
-# Run Rust smart contract integration tests
-make test-contracts
-```
+- `MIXER_RUNTIME_MODE=preview|live|disabled`
+- `MIXER_WITHDRAWAL_AUTHORITY=operator-registry-lock|self-custodied|coordinator`
+- `NULLIFIER_REGISTRY_*` for live withdrawal preview/broadcast
 
-To test the typescript SDK logic locally:
-```bash
-# Install dependencies
-pnpm install
+## Notes
 
-# Run SDK Simulation
-npx tsx scripts/mix.ts
-```
+- The repo already contains Groth16 artifacts under `circuits/`.
+- A true Aggron end-to-end deposit coordinator and real CT input sourcing are still separate work; the current deposit flow is a structured preview/demo path rather than a full on-chain multi-party coordinator.
