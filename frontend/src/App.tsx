@@ -24,6 +24,7 @@ import {
   relayWithdrawal,
   type PreparedVaultWithdrawal,
 } from "./withdrawal";
+import { joinLiveMix } from "./coordinator";
 import {
   getNoteId,
   getNotesFromVault,
@@ -192,16 +193,28 @@ export default function App() {
 
     try {
       const stealthOutputAddress = generateStealthAddress(walletAddress);
-      const result = await joinMix({
-        ctInputCell: {
-          outPoint: `0xpreview_${Date.now().toString(16)}`,
-          amount: BigInt(pool.denomination),
-          blindingFactor: randomBlindingFactor(),
-        },
-        stealthOutputAddress,
-        privateKey: `joyid_session_${walletAddress.slice(-8)}`,
-        runtimeMode: runtimeMode === "live" ? "live" : "preview",
-      });
+      const inputOutPoint = `0xpreview_${Date.now().toString(16)}`;
+      let result;
+      
+      if (runtimeMode === "live") {
+        result = await joinLiveMix({
+          denomination: BigInt(pool.denomination),
+          stealthOutputAddress,
+          inputOutPoint,
+          onProgress: setMixingStep,
+        });
+      } else {
+        result = await joinMix({
+          ctInputCell: {
+            outPoint: inputOutPoint,
+            amount: BigInt(pool.denomination),
+            blindingFactor: randomBlindingFactor(),
+          },
+          stealthOutputAddress,
+          privateKey: `joyid_session_${walletAddress.slice(-8)}`,
+          runtimeMode: "preview",
+        });
+      }
 
       setMixingStep(100);
       const note: DepositNote = {
