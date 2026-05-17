@@ -11,6 +11,7 @@ import {
 } from 'mixer-sdk';
 import { getGroth16ArtifactUrls, tryLoadFrontendRuntimeConfig } from './runtime';
 import type { DepositNote, WithdrawalMode } from './vault';
+import { submitToRelayer, pollRelayStatus, getRelayerUrl } from './relayer';
 
 const SUPPORTED_DENOMINATION = 100n;
 
@@ -210,3 +211,56 @@ export async function broadcastPreparedWithdrawal(
 
   return provider.broadcastSignedWithdrawal(signedTransaction as CkbTransaction);
 }
+
+/**
+ * relayWithdrawal
+ *
+ * Privacy-preserving alternative to broadcastPreparedWithdrawal.
+ *
+ * Instead of signing the transaction with the user's JoyID wallet (which
+ * links their identity to the withdrawal via the fee-paying address), this
+ * function sends the serialised ZK proof to an off-chain relayer.
+ * The relayer pays the CKB gas fee from its own wallet and broadcasts the
+ * transaction. The user remains anonymous.
+ *
+ * The relayer CANNOT redirect funds — the `zk-membership-type` on-chain
+ * contract verifies that the proof commits to `recipientAddress`.
+ */
+export async function relayWithdrawal(
+  prepared:         PreparedVaultWithdrawal,
+  recipientAddress: string,
+  relayerEndpoint   = getRelayerUrl(),
+): Promise<string> {
+  if (prepared.mode !== 'aggron-preview') {
+    throw new Error(
+      'Relay withdrawal requires Aggron live runtime config. Switch to live mode first.',
+    );
+  }
+
+  // Serialise the proof bytes → hex
+  const proofBytes =
+    prepared.proof.packedGroth16Proof?.bytes ??
+    prepared.proof.snarkProof ??
+    prepared.proof.serializedWitness;
+
+  const proofHex = `0x${Array.from(proofBytes, b =>
+    b.toString(16).padStart(2, '0'),
+  ).join('')}`;
+
+  const nullifierHex = prepared.transaction.nullifier;
+  const merkleRoot   = prepared.proof.publicInputs.merkleRoot;
+
+  // Submit the proof — no JoyID signing required
+  const job = await submitToRelayer(
+    proofHex,
+    nullifierHex,
+    merkleRoot,
+    recipientAddress,
+    String(SUPPORTED_DENOMINATION),
+    relayerEndpoint,
+  );
+
+  // Poll until the relayer broadcasts the transaction
+  return pollRelayStatus(job.jobId, relayerEndpoint);
+}
+

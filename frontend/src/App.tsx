@@ -21,6 +21,7 @@ import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import {
   broadcastPreparedWithdrawal,
   prepareVaultWithdrawal,
+  relayWithdrawal,
   type PreparedVaultWithdrawal,
 } from "./withdrawal";
 import {
@@ -82,6 +83,7 @@ export default function App() {
   const [preparedWithdrawals, setPreparedWithdrawals] = useState<Record<string, WithdrawalPreview>>({});
   const [statusBanner, setStatusBanner] = useState<StatusBanner | null>(null);
   const [lastDepositResult, setLastDepositResult] = useState<DepositResult | null>(null);
+  const [relayBusyId, setRelayBusyId] = useState<string | null>(null);
   const [runtimeStatus] = useState(() => tryLoadFrontendRuntimeConfig());
 
   const runtimeMode = runtimeStatus.mode;
@@ -350,6 +352,43 @@ export default function App() {
       });
     } finally {
       setBroadcastBusyId(null);
+    }
+  };
+
+  const handleRelayWithdrawal = async (note: DepositNote) => {
+    const noteId = getNoteId(note);
+    const prepared = preparedWithdrawals[noteId];
+    if (!prepared) {
+      setStatusBanner({ tone: 'error', text: 'Generate the withdrawal proof first before relaying.' });
+      return;
+    }
+
+    // Relay to a fresh stealth address — the user does NOT need their wallet connected
+    const recipient = note.stealthOutputAddress;
+    setRelayBusyId(noteId);
+    setStatusBanner(null);
+
+    try {
+      const txHash = await relayWithdrawal(prepared, recipient);
+      const updatedNote: DepositNote = {
+        ...note,
+        withdrawalStatus: 'submitted',
+        lastBroadcastAt:  Date.now(),
+        lastBroadcastHash: txHash,
+      };
+      await updateNoteInVault(updatedNote);
+      setVaultNotes(getNotesFromVault());
+      setStatusBanner({
+        tone: 'success',
+        text: `Relayed successfully — tx hash: ${txHash}. Your withdrawal is anonymous.`,
+      });
+    } catch (error) {
+      setStatusBanner({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Relay failed.',
+      });
+    } finally {
+      setRelayBusyId(null);
     }
   };
 
@@ -745,11 +784,28 @@ export default function App() {
                     </button>
 
                     <button
-                      className={`btn-primary w-full ${prepared?.mode === "aggron-preview" && walletAddress ? "bg-gradient-to-r from-[#00f2ff] to-[#0082ff] text-black" : "opacity-50 cursor-not-allowed"}`}
-                      disabled={!prepared || prepared.mode !== "aggron-preview" || !walletAddress || isPreparing || isBroadcasting}
+                      className={`btn-primary w-full ${
+                        prepared?.mode === 'aggron-preview' && walletAddress
+                          ? 'bg-gradient-to-r from-[#00f2ff] to-[#0082ff] text-black'
+                          : 'opacity-50 cursor-not-allowed'
+                      }`}
+                      disabled={!prepared || prepared.mode !== 'aggron-preview' || !walletAddress || isPreparing || isBroadcasting || relayBusyId === noteId}
                       onClick={() => void handleBroadcastWithdrawal(note)}
                     >
-                      {isBroadcasting ? "Broadcasting..." : "Sign With JoyID & Broadcast"}
+                      {isBroadcasting ? 'Broadcasting...' : 'Sign With JoyID & Broadcast'}
+                    </button>
+
+                    <button
+                      className={`btn-primary w-full ${
+                        prepared?.mode === 'aggron-preview'
+                          ? 'bg-gradient-to-r from-[#7000ff] to-[#a040ff] text-white'
+                          : 'opacity-50 cursor-not-allowed'
+                      }`}
+                      disabled={!prepared || prepared.mode !== 'aggron-preview' || isPreparing || isBroadcasting || relayBusyId === noteId}
+                      onClick={() => void handleRelayWithdrawal(note)}
+                      title="Submit proof to the off-chain relayer. No JoyID signing needed — your identity stays private."
+                    >
+                      {relayBusyId === noteId ? 'Relaying…' : '🔒 Relay (Private, No Wallet Needed)'}
                     </button>
 
                     {!supported && (
