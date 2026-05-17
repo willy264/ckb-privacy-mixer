@@ -1,0 +1,33 @@
+{
+  "name": "ckb-mixer-backend",
+  "version": "0.1.0",
+  "description": "CKB Privacy Mixer — off-chain Relayer and Coordinator backend",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "lint": "eslint . --ext ts --max-warnings 0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "ws": "^8.14.2",
+    "dotenv": "^16.3.1",
+    "mixer-sdk": "workspace:*",
+    "@ckb-lumos/lumos": "^0.22.2",
+    "@ckb-lumos/hd": "^0.22.2",
+    "@ckb-lumos/base": "^0.22.2",
+    "winston": "^3.11.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/ws": "^8.5.10",
+    "@types/uuid": "^9.0.7",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.6.0",
+    "typescript": "^5.3.3"
+  }
+}

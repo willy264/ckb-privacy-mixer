@@ -1,3 +1,4 @@
 packages:
   - 'mixer-sdk'
   - 'frontend'
+  - 'backend'

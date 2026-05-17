@@ -1,0 +1,90 @@
+import express, { type Request, type Response, type NextFunction } from 'express';
+import cors from 'cors';
+import { loadRelayerConfig } from './config.js';
+import { RelayerWallet } from './wallet.js';
+import { submitRelay, jobs, type RelayRequest } from './relay.js';
+import { logger } from '../utils/logger.js';
+
+/**
+ * Creates and returns the Relayer Express application.
+ *
+ * Endpoints:
+ *   POST /relay         — Submit a ZK proof for the relayer to broadcast
+ *   GET  /relay/:jobId  — Poll the status of a relay job
+ *   GET  /health        — Relayer liveness + wallet balance
+ *   GET  /info          — Public relayer metadata (fee rate, address)
+ */
+export function createRelayerApp() {
+    const cfg = loadRelayerConfig();
+    const wallet = new RelayerWallet(cfg);
+
+    // Log the relayer balance on startup
+    wallet.checkBalance().catch(err =>
+        logger.warn('[Relayer] Could not check balance', { error: String(err) }),
+    );
+
+    const app = express();
+    app.use(cors());
+    app.use(express.json({ limit: '512kb' }));
+
+    // ── POST /relay ────────────────────────────────────────────────────────────
+    app.post('/relay', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const body = req.body as RelayRequest;
+            if (!body.proofHex || !body.recipientAddress || !body.nullifierHex) {
+                res.status(400).json({ error: 'Missing required fields: proofHex, recipientAddress, nullifierHex' });
+                return;
+            }
+
+            const result = await submitRelay(body, wallet, cfg);
+            res.status(202).json(result);
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    // ── GET /relay/:jobId ──────────────────────────────────────────────────────
+    app.get('/relay/:jobId', (req: Request, res: Response) => {
+        const job = jobs.get(req.params.jobId);
+        if (!job) {
+            res.status(404).json({ error: 'Job not found' });
+            return;
+        }
+        res.json(job);
+    });
+
+    // ── GET /health ────────────────────────────────────────────────────────────
+    app.get('/health', async (_req: Request, res: Response) => {
+        try {
+            const balance = await wallet.getBalanceShannnons();
+            res.json({
+                status: 'ok',
+                relayerAddress: wallet.getAddress(),
+                balanceCKB: (Number(balance) / 1e8).toFixed(4),
+                activeJobs: jobs.size,
+            });
+        } catch {
+            res.status(503).json({ status: 'degraded', reason: 'Cannot reach CKB node' });
+        }
+    });
+
+    // ── GET /info ──────────────────────────────────────────────────────────────
+    // Public metadata — the frontend reads this to show users the relayer's fee
+    app.get('/info', (_req: Request, res: Response) => {
+        res.json({
+            relayerAddress: wallet.getAddress(),
+            feeRate: cfg.feeRate,
+            feePercent: `${(cfg.feeRate * 100).toFixed(2)}%`,
+            network: process.env.CKB_NETWORK ?? 'testnet',
+        });
+    });
+
+    // ── Error handler ──────────────────────────────────────────────────────────
+    app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error('[Relayer] Unhandled error', { error: message });
+        res.status(500).json({ error: message });
+    });
+
+    return app;
+}
