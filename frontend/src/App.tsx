@@ -197,10 +197,12 @@ export default function App() {
       let result;
       
       if (runtimeMode === "live") {
+        if (!walletAddress) throw new Error("Wallet not connected");
         result = await joinLiveMix({
           denomination: BigInt(pool.denomination),
           stealthOutputAddress,
           inputOutPoint,
+          walletAddress,
           onProgress: setMixingStep,
         });
       } else {

@@ -19,6 +19,7 @@ interface WsJoinMessage {
     denomination: string;       // e.g. "100"
     commitment: string;         // Pedersen commitment (public)
     stealthOutputAddress: string;
+    outPoint: string;
 }
 
 interface WsSignMessage {
@@ -82,11 +83,12 @@ export function createCoordinatorServer() {
     // ── REST: join a pool (fallback for non-WS clients) ───────────────────────
     app.post('/pools/:poolId/join', (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { commitment, stealthOutputAddress } = req.body as {
+            const { commitment, stealthOutputAddress, outPoint } = req.body as {
                 commitment: string;
                 stealthOutputAddress: string;
+                outPoint: string;
             };
-            const participantId = joinPool(req.params.poolId, commitment, stealthOutputAddress);
+            const participantId = joinPool(req.params.poolId, commitment, stealthOutputAddress, outPoint);
             res.json({ participantId });
         } catch (err) { next(err); }
     });
@@ -114,7 +116,7 @@ export function createCoordinatorServer() {
                 if (msg.type === 'join') {
                     const denomination = BigInt(msg.denomination);
                     const pool = findOrCreatePool(denomination);
-                    const participantId = joinPool(pool.poolId, msg.commitment, msg.stealthOutputAddress);
+                    const participantId = joinPool(pool.poolId, msg.commitment, msg.stealthOutputAddress, msg.outPoint);
 
                     currentPoolId = pool.poolId;
                     currentParticipantId = participantId;
@@ -160,18 +162,23 @@ export function createCoordinatorServer() {
                     if (allSigned) {
                         const pool = pools.get(msg.poolId);
                         if (pool) {
-                            const txHash = await broadcastCoinJoin(
+                            broadcastCoinJoin(
                                 pool,
                                 process.env.CKB_RPC_URL ?? '',
-                            );
-                            broadcastToPool(msg.poolId, {
-                                type: 'broadcast',
-                                poolId: msg.poolId,
-                                txHash,
-                                message: 'CoinJoin transaction successfully broadcast.',
+                            ).then((txHash) => {
+                                const sessionCommitments = pool.participants.map(p => p.commitment);
+                                broadcastToPool(msg.poolId, {
+                                    type: 'broadcast',
+                                    poolId: msg.poolId,
+                                    txHash,
+                                    sessionCommitments,
+                                    message: 'CoinJoin transaction successfully broadcast.',
+                                });
+                                // Clean up sockets for this pool
+                                poolSockets.delete(msg.poolId);
+                            }).catch((err) => {
+                                logger.error('[Coordinator] Broadcast error', { error: err.message });
                             });
-                            // Clean up sockets for this pool
-                            poolSockets.delete(msg.poolId);
                         }
                     } else {
                         // Notify pool of updated signed count

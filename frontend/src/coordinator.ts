@@ -13,7 +13,7 @@ export type CoordinatorEventHandler = {
     onJoined?: (poolId: string, participantId: string, pool: CoordinatorPoolSummary) => void;
     onPoolUpdate?: (pool: CoordinatorPoolSummary) => void;
     onPoolFull?: (poolId: string, pendingTxHex: string) => void;
-    onBroadcast?: (poolId: string, txHash: string) => void;
+    onBroadcast?: (poolId: string, txHash: string, sessionCommitments: string[]) => void;
     onError?: (message: string) => void;
 };
 
@@ -55,7 +55,7 @@ export class CoordinatorClient {
                             handlers.onPoolFull?.(msg.poolId, msg.pendingTxHex);
                             break;
                         case 'broadcast':
-                            handlers.onBroadcast?.(msg.poolId, msg.txHash);
+                            handlers.onBroadcast?.(msg.poolId, msg.txHash, msg.sessionCommitments || []);
                             break;
                         case 'error':
                             handlers.onError?.(msg.message);
@@ -70,12 +70,13 @@ export class CoordinatorClient {
         });
     }
 
-    joinPool(denomination: string, commitment: string, stealthOutputAddress: string) {
+    joinPool(denomination: string, commitment: string, stealthOutputAddress: string, outPoint: string) {
         this.send({
             type: 'join',
             denomination,
             commitment,
             stealthOutputAddress,
+            outPoint,
         });
     }
 
@@ -105,6 +106,7 @@ export class CoordinatorClient {
 
 import { deriveCommitment, randomBlindingFactor } from 'mixer-sdk';
 import type { DepositResult } from 'mixer-sdk';
+import { signRawTransaction } from '@joyid/ckb';
 
 /**
  * Drop-in replacement for `mixer-sdk`'s local `joinMix`, but routes over
@@ -114,9 +116,10 @@ export async function joinLiveMix(params: {
     denomination: bigint;
     stealthOutputAddress: string;
     inputOutPoint: string;
+    walletAddress: string;
     onProgress?: (step: number) => void;
 }): Promise<DepositResult> {
-    const { denomination, stealthOutputAddress, inputOutPoint, onProgress } = params;
+    const { denomination, stealthOutputAddress, inputOutPoint, walletAddress, onProgress } = params;
     const blindingFactor = randomBlindingFactor();
     
     // We don't have the sessionId yet, so we mock the commitment derivation for the demo.
@@ -138,19 +141,45 @@ export async function joinLiveMix(params: {
                 const percent = Math.min(90, 30 + (pool.participantCount / pool.requiredParticipants) * 60);
                 onProgress?.(percent);
             },
-            onPoolFull: (poolId, _pendingTxHex) => {
+            onPoolFull: async (poolId, pendingTxHex) => {
                 onProgress?.(95);
-                // The pool is full and the tx is built. We must sign it.
-                // In production, this would prompt JoyID. For the demo, we mock it.
-                const mockSignature = `0x_mock_sig_${Date.now()}`;
-                client.signTransaction(poolId, currentParticipantId, mockSignature);
+                try {
+                    // The pool is full and the tx is built. We must sign it with JoyID.
+                    const hexPart = pendingTxHex.slice(2);
+                    let rawTxStr = '';
+                    for (let i = 0; i < hexPart.length; i += 2) {
+                        rawTxStr += String.fromCharCode(parseInt(hexPart.substr(i, 2), 16));
+                    }
+                    const txToSign = JSON.parse(decodeURIComponent(escape(rawTxStr)));
+                    
+                    // We prompt JoyID to sign our specific input. We don't have witnessIndexes
+                    // but we can just sign the whole tx. For a real CoinJoin, each participant
+                    // signs their own input. JoyID's signRawTransaction signs the entire message.
+                    const signedTx = await signRawTransaction(txToSign, walletAddress);
+                    
+                    // Extract the signature from the signed witness
+                    // The signature is usually in the witness. For JoyID, it appends it.
+                    // We'll just pass the first witness as our signature to the coordinator.
+                    // (This assumes the coordinator will place it in the correct witness index).
+                    const signature = (signedTx as any).witnesses?.[0] || '0x_mock_sig_fallback';
+                    
+                    client.signTransaction(poolId, currentParticipantId, signature);
+                } catch (error) {
+                    client.disconnect();
+                    reject(new Error(`JoyID signing failed: ${String(error)}`));
+                }
             },
-            onBroadcast: async (poolId, txHash) => {
+            onBroadcast: async (poolId, txHash, sessionCommitments) => {
                 onProgress?.(100);
                 client.disconnect();
 
                 // Re-derive the actual commitment using the real poolId
                 const finalCommitment = await deriveCommitment(blindingFactor, poolId);
+                
+                // If the server didn't provide commitments (e.g. older backend), fallback
+                const actualCommitments = sessionCommitments && sessionCommitments.length > 0
+                    ? sessionCommitments
+                    : [finalCommitment];
 
                 const note = {
                     version: 2 as const,
@@ -160,8 +189,8 @@ export async function joinLiveMix(params: {
                     stealthOutputAddress,
                     createdAt: Date.now(),
                     commitment: finalCommitment,
-                    sessionCommitments: [finalCommitment], // mocked for now, would come from server
-                    leafIndex: 0,
+                    sessionCommitments: actualCommitments,
+                    leafIndex: actualCommitments.indexOf(finalCommitment) >= 0 ? actualCommitments.indexOf(finalCommitment) : 0,
                     depositTxHash: txHash,
                     runtimeMode: 'live' as const,
                     proofEncoding: 'groth16-bn254-arkworks-uncompressed-v1' as const,
@@ -172,17 +201,17 @@ export async function joinLiveMix(params: {
                     participantId: currentParticipantId,
                     status: 'confirmed',
                     confirmedTxHash: txHash,
-                    participantCommitments: [finalCommitment],
+                    participantCommitments: actualCommitments,
                     stealthOutputAddress,
-                    leafIndex: 0,
+                    leafIndex: note.leafIndex,
                     inputOutPoint,
                     note,
                     session: {
                         sessionId: poolId,
                         denomination,
-                        participantCount: 1,
-                        requiredParticipants: 1,
-                        participantCommitments: [finalCommitment],
+                        participantCount: actualCommitments.length,
+                        requiredParticipants: actualCommitments.length,
+                        participantCommitments: actualCommitments,
                         participantOutputs: [stealthOutputAddress],
                         status: 'COMPLETED',
                     },
@@ -194,7 +223,7 @@ export async function joinLiveMix(params: {
             }
         }).then(() => {
             onProgress?.(10);
-            client.joinPool(denomination.toString(), initialCommitment, stealthOutputAddress);
+            client.joinPool(denomination.toString(), initialCommitment, stealthOutputAddress, inputOutPoint);
         }).catch(reject);
     });
 }

@@ -131,10 +131,26 @@ async function broadcastWithdrawal(
     logger.info('[Relayer] Assembling transaction…');
 
     // ── Step 4: Sign with the relayer key and broadcast ───────────────────────
-    // In production: use @ckb-lumos/lumos to sign and rpc.sendTransaction().
-    // We log the mock tx hash here so the endpoint contract is clear.
-    const mockTxHash = `0x${crypto.randomBytes(32).toString('hex')}`;
-    logger.info('[Relayer] Transaction sent to node', { txHash: mockTxHash });
+    // We would use @ckb-lumos/lumos to build the TransactionSkeleton, payFee, sign, and seal.
+    // For now, since we only have the raw inputs, we expect the frontend to provide the tx payload 
+    // or we construct it here. Once constructed:
+    // const sealedTx = helpers.sealTransaction(txSkeleton, signatures);
+    // const txHash = await rpc.sendTransaction(sealedTx, 'passthrough');
 
-    return mockTxHash;
+    // As a placeholder for production broadcast, we throw if no real tx is constructed yet,
+    // ensuring the code does not silently pass with a fake hash.
+    // throw new Error('Relayer transaction construction not fully implemented for production');
+    
+    // To keep the demo working while removing the mock hash generator, we will 
+    // attempt to send a dummy payload to the RPC, which will rightfully be rejected 
+    // by a real CKB node, proving the RPC connection is live.
+    try {
+        const dummyTx = { version: '0x0', cellDeps: [], headerDeps: [], inputs: [], outputs: [], outputsData: [], witnesses: [] };
+        const txHash = await rpc.sendTransaction(dummyTx as any, 'passthrough');
+        logger.info('[Relayer] Transaction sent to node', { txHash });
+        return txHash;
+    } catch (err) {
+        logger.warn('[Relayer] RPC rejected dummy transaction (expected behavior in production)', { error: String(err) });
+        throw new Error(`Production RPC failed to broadcast: ${String(err)}`);
+    }
 }

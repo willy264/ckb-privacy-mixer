@@ -1,7 +1,10 @@
 import crypto from 'crypto';
+import { RPC, helpers, config as lumosConfig } from '@ckb-lumos/lumos';
 import type { MixPool } from './pool.js';
 import { pools } from './pool.js';
 import { logger } from '../utils/logger.js';
+
+lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
 
 /**
  * CoinJoin transaction assembly.
@@ -53,14 +56,26 @@ export function buildCoinJoinTransaction(pool: MixPool): string {
     // Build a CKB-compatible raw transaction skeleton
     const rawTx = {
         version: '0x0',
-        inputs: pool.participants.map(p => ({
-            previousOutput: `commitment:${p.commitment}`, // resolved on-chain
-            since: '0x0',
-        })),
-        outputs: shuffledOutputAddresses.map(addr => ({
-            lock: addr,
-            capacity: `0x${pool.denomination.toString(16)}`,
-        })),
+        inputs: pool.participants.map(p => {
+            // parse outPoint assuming format "0xhash_0xindex" or fallback if different
+            const parts = p.outPoint.split('_');
+            const txHash = parts[0] || p.outPoint;
+            const index = parts[1] || '0x0';
+            return {
+                previousOutput: {
+                    txHash,
+                    index,
+                },
+                since: '0x0',
+            };
+        }),
+        outputs: shuffledOutputAddresses.map(addr => {
+            const lock = helpers.parseAddress(addr, { config: lumosConfig.predefined.AGGRON4 });
+            return {
+                lock,
+                capacity: `0x${pool.denomination.toString(16)}`,
+            };
+        }),
         outputsData: shuffledOutputAddresses.map(() => '0x'),
         cellDeps: [],
         headerDeps: [],
@@ -128,14 +143,33 @@ export async function broadcastCoinJoin(pool: MixPool, rpcUrl: string): Promise<
         throw new Error('Pool is not ready to broadcast');
     }
 
-    // TODO: Use @ckb-lumos/lumos RPC to send the assembled signed tx
-    const mockTxHash = `0x${crypto.randomBytes(32).toString('hex')}`;
+    if (!pool.pendingTxHex) {
+        throw new Error('No pending transaction to broadcast');
+    }
 
-    pool.status = 'complete';
-    pool.broadcastTxHash = mockTxHash;
+    const rawTxStr = Buffer.from(pool.pendingTxHex.slice(2), 'hex').toString('utf8');
+    const tx = JSON.parse(rawTxStr);
 
-    logger.info('[CoinJoin] Broadcast complete', { poolId: pool.poolId, txHash: mockTxHash });
-    return mockTxHash;
+    // Inject signatures into witnesses in the same order as participants
+    tx.witnesses = pool.participants.map(p => p.signature || '0x');
+
+    logger.info('[CoinJoin] Sending transaction to CKB node...', { poolId: pool.poolId });
+
+    try {
+        const rpc = new RPC(rpcUrl);
+        const txHash = await rpc.sendTransaction(tx, 'passthrough');
+
+        pool.status = 'complete';
+        pool.broadcastTxHash = txHash;
+
+        logger.info('[CoinJoin] Broadcast complete', { poolId: pool.poolId, txHash });
+        return txHash;
+    } catch (error) {
+        pool.status = 'failed';
+        pool.failureReason = String(error);
+        logger.error('[CoinJoin] Broadcast failed', { poolId: pool.poolId, error: pool.failureReason });
+        throw error;
+    }
 }
 
 function secureShuffle<T>(arr: T[]): T[] {
