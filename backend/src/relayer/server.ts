@@ -2,8 +2,11 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import { loadRelayerConfig } from './config.js';
 import { RelayerWallet } from './wallet.js';
-import { submitRelay, jobs, type RelayRequest } from './relay.js';
+import { submitRelay, type RelayRequest } from './relay.js';
 import { logger } from '../utils/logger.js';
+import { redis } from '../utils/redis.js';
+
+import { rateLimit } from 'express-rate-limit';
 
 /**
  * Creates and returns the Relayer Express application.
@@ -27,6 +30,13 @@ export function createRelayerApp() {
     app.use(cors());
     app.use(express.json({ limit: '512kb' }));
 
+    const apiLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 100,
+        message: { error: 'Too many requests, please try again later.' }
+    });
+    app.use('/relay', apiLimiter);
+
     // ── POST /relay ────────────────────────────────────────────────────────────
     app.post('/relay', async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -44,24 +54,27 @@ export function createRelayerApp() {
     });
 
     // ── GET /relay/:jobId ──────────────────────────────────────────────────────
-    app.get('/relay/:jobId', (req: Request, res: Response) => {
-        const job = jobs.get(req.params.jobId);
-        if (!job) {
+    app.get('/relay/:jobId', async (req: Request, res: Response) => {
+        const jobStr = await redis.get(`job:${req.params.jobId}`);
+        if (!jobStr) {
             res.status(404).json({ error: 'Job not found' });
             return;
         }
-        res.json(job);
+        res.json(JSON.parse(jobStr));
     });
 
     // ── GET /health ────────────────────────────────────────────────────────────
     app.get('/health', async (_req: Request, res: Response) => {
         try {
             const balance = await wallet.getBalanceShannnons();
+            // Count active jobs by scanning keys (for demo purposes)
+            // In a production app, we'd use a dedicated set or counter for active jobs
+            const jobKeys = await redis.keys('job:*');
             res.json({
                 status: 'ok',
                 relayerAddress: wallet.getAddress(),
                 balanceCKB: (Number(balance) / 1e8).toFixed(4),
-                activeJobs: jobs.size,
+                activeJobs: jobKeys.length,
             });
         } catch {
             res.status(503).json({ status: 'degraded', reason: 'Cannot reach CKB node' });

@@ -2,6 +2,9 @@ import http from 'http';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
+import { rateLimit } from 'express-rate-limit';
+import { z } from 'zod';
+import { helpers, config as lumosConfig } from '@ckb-lumos/lumos';
 import {
     findOrCreatePool,
     joinPool,
@@ -65,6 +68,14 @@ export function createCoordinatorServer() {
     app.use(cors());
     app.use(express.json());
 
+    // Apply rate limiting to all requests
+    const apiLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 100, // Limit each IP to 100 requests per windowMs
+        message: { error: 'Too many requests, please try again later.' }
+    });
+    app.use(apiLimiter);
+
     // ── REST: list open pools ──────────────────────────────────────────────────
     app.get('/pools', (_req: Request, res: Response) => {
         const open = [...pools.values()]
@@ -81,14 +92,23 @@ export function createCoordinatorServer() {
     });
 
     // ── REST: join a pool (fallback for non-WS clients) ───────────────────────
+    const joinRequestSchema = z.object({
+        commitment: z.string().regex(/^0x[0-9a-fA-F]+$/, "Must be a valid hex string"),
+        stealthOutputAddress: z.string().regex(/^(ckt1|ckb1)/, "Must be a valid CKB address prefix"),
+        outPoint: z.string()
+    }).refine((data) => {
+        try {
+            helpers.parseAddress(data.stealthOutputAddress, { config: lumosConfig.predefined.AGGRON4 });
+            return true;
+        } catch {
+            return false;
+        }
+    }, { message: "Invalid CKB Address encoding", path: ["stealthOutputAddress"] });
+
     app.post('/pools/:poolId/join', (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { commitment, stealthOutputAddress, outPoint } = req.body as {
-                commitment: string;
-                stealthOutputAddress: string;
-                outPoint: string;
-            };
-            const participantId = joinPool(req.params.poolId, commitment, stealthOutputAddress, outPoint);
+            const parsed = joinRequestSchema.parse(req.body);
+            const participantId = joinPool(req.params.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.outPoint);
             res.json({ participantId });
         } catch (err) { next(err); }
     });
@@ -114,9 +134,16 @@ export function createCoordinatorServer() {
 
                 // ── JOIN ───────────────────────────────────────────────────────
                 if (msg.type === 'join') {
+                    // Validate fields
+                    const parsed = joinRequestSchema.parse({
+                        commitment: msg.commitment,
+                        stealthOutputAddress: msg.stealthOutputAddress,
+                        outPoint: msg.outPoint
+                    });
+                    
                     const denomination = BigInt(msg.denomination);
                     const pool = findOrCreatePool(denomination);
-                    const participantId = joinPool(pool.poolId, msg.commitment, msg.stealthOutputAddress, msg.outPoint);
+                    const participantId = joinPool(pool.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.outPoint);
 
                     currentPoolId = pool.poolId;
                     currentParticipantId = participantId;

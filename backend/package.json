@@ -10,23 +10,29 @@
     "lint": "eslint . --ext ts --max-warnings 0"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "ws": "^8.14.2",
-    "dotenv": "^16.3.1",
-    "mixer-sdk": "workspace:*",
-    "@ckb-lumos/lumos": "^0.22.2",
-    "@ckb-lumos/hd": "^0.22.2",
     "@ckb-lumos/base": "^0.22.2",
+    "@ckb-lumos/hd": "^0.22.2",
+    "@ckb-lumos/lumos": "^0.22.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.5.2",
+    "ioredis": "^5.10.1",
+    "mixer-sdk": "workspace:*",
+    "snarkjs": "^0.7.6",
+    "uuid": "^9.0.1",
     "winston": "^3.11.0",
-    "uuid": "^9.0.1"
+    "ws": "^8.14.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
     "@types/cors": "^2.8.17",
-    "@types/ws": "^8.5.10",
-    "@types/uuid": "^9.0.7",
+    "@types/express": "^4.17.21",
+    "@types/express-rate-limit": "^6.0.2",
     "@types/node": "^20.0.0",
+    "@types/snarkjs": "^0.7.9",
+    "@types/uuid": "^9.0.7",
+    "@types/ws": "^8.5.10",
     "tsx": "^4.6.0",
     "typescript": "^5.3.3"
   }
