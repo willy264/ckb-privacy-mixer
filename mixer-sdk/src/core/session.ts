@@ -1,4 +1,4 @@
-import * as crypto from 'crypto';
+// Use the Web Crypto API (works in both browser and modern Node.js >= 19)
 
 // Mock types for CKB SDK compatibility
 export interface Cell {
@@ -63,14 +63,23 @@ export interface MixParticipant {
 
 /** Generate a cryptographically secure random hex ID. */
 function cryptoRandomId(prefix: string): string {
-    return `${prefix}_${crypto.randomBytes(16).toString('hex')}`;
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return `${prefix}_${Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** Fisher-Yates shuffle using a CSPRNG for unbiased output ordering. */
 function secureShuffleArray<T>(array: T[]): T[] {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = crypto.randomInt(0, i + 1);
+        // Generate an unbiased random index in [0, i] using rejection sampling
+        const range = i + 1;
+        const buf = new Uint32Array(1);
+        let j: number;
+        do {
+            globalThis.crypto.getRandomValues(buf);
+            j = buf[0] % range;
+        } while (buf[0] >= Math.floor(0xFFFFFFFF / range) * range);
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
@@ -123,7 +132,7 @@ export class MixSession {
 
     public buildTransaction(): Transaction {
         this.checkTimeout();
-        if (this.state !== 'READY') {
+        if (this.state !== 'READY' && this.state !== 'COMPLETED') {
             throw new Error(`Session not ready. Current state: ${this.state}`);
         }
 
@@ -157,9 +166,9 @@ export class MixSession {
 
         const allSigned = this.participants.every(item => !!item.signature);
         if (allSigned) {
-            this.state = 'COMPLETED';
             const tx = this.buildTransaction();
             tx.isSigned = true;
+            this.state = 'COMPLETED';
             return tx;
         }
 

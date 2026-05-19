@@ -20,7 +20,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: -1;
+  z-index: 0;
   background-image: 
     radial-gradient(at 40% 20%, hsla(190,100%,50%,0.05) 0px, transparent 50%),
     radial-gradient(at 80% 0%, hsla(280,100%,50%,0.05) 0px, transparent 50%),
@@ -28,11 +28,29 @@
 }
 
 .glass-card {
-  @apply bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md;
+  @apply bg-[#111116] border border-white/10 rounded-2xl;
 }
 
 .glow-text {
   text-shadow: 0 0 20px rgba(0, 242, 255, 0.5);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 242, 255, 0.2);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 242, 255, 0.4);
 }
 
 @layer components {

@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:coordinator": "tsx watch src/coordinator/server.ts",
+    "dev:relayer": "tsx watch src/relayer/server.ts",
+    "start:coordinator": "tsx src/coordinator/server.ts",
+    "start:relayer": "tsx src/relayer/server.ts",
     "start": "node dist/index.js",
     "build": "tsc",
     "lint": "eslint . --ext ts --max-warnings 0"

@@ -230,3 +230,30 @@ export async function clearVault() {
   localStorage.removeItem(VAULT_IV_KEY);
   cachedNotes = [];
 }
+
+/** 
+ * Export a single note as a JSON string for backup.
+ * This is crucial so users don't lose their funds if localStorage is cleared.
+ */
+export function exportNoteBackup(note: DepositNote): string {
+  // Strip out temporary frontend state that doesn't need to be backed up
+  const { withdrawalStatus, lastPreparedAt, lastPreparedMode, ...backupData } = note;
+  return JSON.stringify(backupData, null, 2);
+}
+
+/**
+ * Import a note from a JSON backup string into the vault.
+ */
+export async function importNoteBackup(jsonString: string): Promise<void> {
+  try {
+    const parsed = JSON.parse(jsonString);
+    if (!parsed || !parsed.sessionId || !parsed.commitment) {
+      throw new Error('Invalid note backup format');
+    }
+    const note = migrateNote(parsed);
+    await updateNoteInVault(note);
+  } catch (err) {
+    throw new Error(`Failed to import note: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+

@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield,
-  Zap,
-  Lock,
-  Users,
-  ArrowRight,
-  CheckCircle2,
-  AlertCircle,
   Wallet,
+  Download,
+  Upload,
+  ArrowRight,
+  Settings,
+  Info,
+  AlertCircle
 } from "lucide-react";
 import { connect, initConfig } from "@joyid/ckb";
 import {
@@ -25,12 +25,15 @@ import {
   type PreparedVaultWithdrawal,
 } from "./withdrawal";
 import { joinLiveMix } from "./coordinator";
+import { fetchRelayerInfo, type RelayerInfo } from "./relayer";
 import {
   getNoteId,
   getNotesFromVault,
   refreshVault,
   saveNoteToVault,
   updateNoteInVault,
+  exportNoteBackup,
+  importNoteBackup,
   type DepositNote,
 } from "./vault";
 
@@ -60,23 +63,27 @@ interface WithdrawalPreview extends PreparedVaultWithdrawal {
 const SUPPORTED_DENOMINATION: Denomination = 100;
 
 function getBannerClasses(tone: BannerTone) {
-  if (tone === "success") {
-    return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
-  }
-
-  if (tone === "error") {
-    return "border-rose-400/30 bg-rose-500/10 text-rose-100";
-  }
-
+  if (tone === "success") return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
+  if (tone === "error") return "border-rose-400/30 bg-rose-500/10 text-rose-100";
   return "border-sky-400/30 bg-sky-500/10 text-sky-100";
 }
 
+function getExplorerTxUrl(txHash: string): string {
+  const isMainnet = (import.meta as any).env?.VITE_CKB_NETWORK === 'mainnet';
+  return isMainnet
+    ? `https://explorer.nervos.org/transaction/${txHash}`
+    : `https://pudge.explorer.nervos.org/transaction/${txHash}`;
+}
+
 export default function App() {
-  const [selectedPool, setSelectedPool] = useState<Denomination | null>(null);
+  const [selectedPool, setSelectedPool] = useState<Denomination>(100);
   const [isMixing, setIsMixing] = useState(false);
   const [mixingStep, setMixingStep] = useState(0);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"mixer" | "vault">("mixer");
+  
+  // Layout state
+  const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit");
+  
   const [vaultNotes, setVaultNotes] = useState<DepositNote[]>([]);
   const [withdrawalBusyId, setWithdrawalBusyId] = useState<string | null>(null);
   const [broadcastBusyId, setBroadcastBusyId] = useState<string | null>(null);
@@ -85,59 +92,51 @@ export default function App() {
   const [statusBanner, setStatusBanner] = useState<StatusBanner | null>(null);
   const [lastDepositResult, setLastDepositResult] = useState<DepositResult | null>(null);
   const [relayBusyId, setRelayBusyId] = useState<string | null>(null);
+  const [relayerInfo, setRelayerInfo] = useState<RelayerInfo | null>(null);
   const [runtimeStatus] = useState(() => tryLoadFrontendRuntimeConfig());
+  const [withdrawNoteString, setWithdrawNoteString] = useState("");
 
   const runtimeMode = runtimeStatus.mode;
   const runtimeReady = runtimeStatus.config?.runtimeMode === "live" && !!runtimeStatus.config?.nullifierRegistry;
   const withdrawalAuthority = runtimeStatus.authority;
-  const selectedPoolState = (() => {
-    const pools: PoolState[] = [
-      {
-        denomination: 100,
-        participants: lastDepositResult?.session.participantCount ?? 3,
-        maxParticipants: lastDepositResult?.session.requiredParticipants ?? 3,
-        available: runtimeMode !== "disabled",
-        statusLabel: runtimeMode === "live" ? "Live preview on Aggron" : runtimeMode === "preview" ? "Preview coordinator" : "Config incomplete",
-      },
-      { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Backend not deployed" },
-      { denomination: 1000, participants: 0, maxParticipants: 3, available: false, statusLabel: "Backend not deployed" },
-    ];
-    return pools.find(pool => pool.denomination === selectedPool) ?? null;
-  })();
+  const liveDepositEnabled = (import.meta as any).env?.VITE_ENABLE_LIVE_DEPOSIT === "true";
 
   const pools: PoolState[] = [
+    { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Backend not deployed" },
     {
       denomination: 100,
-      participants: lastDepositResult?.session.participantCount ?? 3,
-      maxParticipants: lastDepositResult?.session.requiredParticipants ?? 3,
+      participants: lastDepositResult?.session.participantCount ?? 0,
+      maxParticipants: lastDepositResult?.session.requiredParticipants ?? 5,
       available: runtimeMode !== "disabled",
-      statusLabel: runtimeMode === "live" ? "Live preview on Aggron" : runtimeMode === "preview" ? "Preview coordinator" : "Config incomplete",
+      statusLabel: runtimeMode === "live"
+        ? liveDepositEnabled
+          ? "Live deposit coordinator"
+          : "Preview deposits with live withdrawal metadata"
+        : runtimeMode === "preview"
+          ? "Preview coordinator"
+          : "Config incomplete",
     },
-    { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Backend not deployed" },
     { denomination: 1000, participants: 0, maxParticipants: 3, available: false, statusLabel: "Backend not deployed" },
   ];
 
+  const currentPool = pools.find(p => p.denomination === selectedPool) || pools[1];
+
   useEffect(() => {
+    const network = (import.meta as any).env?.VITE_CKB_NETWORK === 'mainnet' ? 'mainnet' : 'testnet';
+    const joyidAppURL = network === 'mainnet' ? 'https://app.joyid.dev' : 'https://testnet.joyid.dev';
+
     initConfig({
       name: "Obscell Privacy Mixer",
       logo: "https://fav.farm/CKB",
-      joyidAppURL: "https://testnet.joyid.dev",
-      network: "testnet",
+      joyidAppURL,
+      network,
     });
     void refreshVault().then(notes => setVaultNotes(notes));
+    void fetchRelayerInfo().then(info => setRelayerInfo(info)).catch(console.error);
   }, []);
 
   useEffect(() => {
-    if (activeTab === "vault") {
-      void refreshVault().then(notes => setVaultNotes(notes));
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (!isMixing) {
-      return;
-    }
-
+    if (!isMixing) return;
     const timer = setInterval(() => {
       setMixingStep(prev => {
         if (prev >= 96) {
@@ -147,7 +146,6 @@ export default function App() {
         return prev + 4;
       });
     }, 120);
-
     return () => clearInterval(timer);
   }, [isMixing]);
 
@@ -168,11 +166,11 @@ export default function App() {
     }
   };
 
-  const startMixing = async (pool: PoolState) => {
-    if (!pool.available) {
+  const startMixing = async () => {
+    if (!currentPool.available) {
       setStatusBanner({
         tone: "info",
-        text: `The ${pool.denomination} CT pool is not available yet. The current demo supports fixed 100 CT deposits only.`,
+        text: `The ${currentPool.denomination} CT pool is not available yet. The current demo supports fixed ${SUPPORTED_DENOMINATION} CT deposits only.`,
       });
       return;
     }
@@ -185,7 +183,6 @@ export default function App() {
       return;
     }
 
-    setSelectedPool(pool.denomination);
     setIsMixing(true);
     setMixingStep(10);
     setDepositBusy(true);
@@ -196,20 +193,43 @@ export default function App() {
       const inputOutPoint = `0xpreview_${Date.now().toString(16)}`;
       let result;
       
-      if (runtimeMode === "live") {
-        if (!walletAddress) throw new Error("Wallet not connected");
-        result = await joinLiveMix({
-          denomination: BigInt(pool.denomination),
-          stealthOutputAddress,
-          inputOutPoint,
-          walletAddress,
-          onProgress: setMixingStep,
-        });
+      if (runtimeMode === "live" && liveDepositEnabled) {
+        try {
+          result = await joinLiveMix({
+            denomination: BigInt(currentPool.denomination),
+            stealthOutputAddress,
+            inputOutPoint,
+            walletAddress,
+            onProgress: setMixingStep,
+          });
+        } catch (wsError) {
+          console.warn('[mixer] Coordinator WebSocket failed, falling back to preview mode:', wsError);
+          setStatusBanner({
+            tone: 'info',
+            text: 'Coordinator is offline — running in local preview mode. Your note will still be saved for future withdrawal.',
+          });
+          result = await joinMix({
+            ctInputCell: {
+              outPoint: inputOutPoint,
+              amount: BigInt(currentPool.denomination),
+              blindingFactor: randomBlindingFactor(),
+            },
+            stealthOutputAddress,
+            privateKey: `joyid_session_${walletAddress.slice(-8)}`,
+            runtimeMode: 'preview',
+          });
+        }
       } else {
+        if (runtimeMode === "live" && !liveDepositEnabled) {
+          setStatusBanner({
+            tone: "info",
+            text: "Live withdrawal metadata is configured, but deposits are still routed through the preview note flow until real spendable CT inputs and the coordinator handshake are wired end to end.",
+          });
+        }
         result = await joinMix({
           ctInputCell: {
             outPoint: inputOutPoint,
-            amount: BigInt(pool.denomination),
+            amount: BigInt(currentPool.denomination),
             blindingFactor: randomBlindingFactor(),
           },
           stealthOutputAddress,
@@ -221,7 +241,7 @@ export default function App() {
       setMixingStep(100);
       const note: DepositNote = {
         ...result.note,
-        denomination: pool.denomination,
+        denomination: currentPool.denomination,
         withdrawalStatus: "idle",
         registrySnapshot: {
           ...result.note.registrySnapshot,
@@ -233,8 +253,7 @@ export default function App() {
       setLastDepositResult(result);
       setStatusBanner({
         tone: "success",
-        text:
-          result.status === "confirmed"
+        text: result.status === "confirmed"
             ? `Deposit session ${result.sessionId} prepared. The canonical vault note is saved and ready for proof generation.`
             : `Deposit session ${result.sessionId} is still waiting on additional signatures, but the canonical note preview has been saved locally.`,
       });
@@ -290,8 +309,7 @@ export default function App() {
       }));
       setStatusBanner({
         tone: "success",
-        text:
-          prepared.mode === "aggron-preview"
+        text: prepared.mode === "aggron-preview"
             ? "Groth16 proof generated in the browser and paired with the live Aggron registry metadata."
             : "Groth16 proof generated in the browser. Runtime config is still in preview mode, so the transaction remains local-only.",
       });
@@ -378,7 +396,6 @@ export default function App() {
       return;
     }
 
-    // Relay to a fresh stealth address — the user does NOT need their wallet connected
     const recipient = note.stealthOutputAddress;
     setRelayBusyId(noteId);
     setStatusBanner(null);
@@ -407,535 +424,390 @@ export default function App() {
     }
   };
 
-  return (
-    <div className="min-h-screen w-full px-6 py-12 flex flex-col items-center">
-      <div className="mesh-bg"></div>
+  const handleImportNote = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        await importNoteBackup(text);
+        setVaultNotes(getNotesFromVault());
+        setStatusBanner({ tone: 'success', text: 'Note imported successfully.' });
+      } catch (err) {
+        setStatusBanner({ tone: 'error', text: err instanceof Error ? err.message : 'Failed to import note' });
+      }
+    };
+    input.click();
+  };
 
-      <header className="w-full max-w-6xl flex justify-between items-center mb-16">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-primary/20 rounded-xl border border-primary/30">
-            <Shield className="w-8 h-8 text-[#00f2ff]" />
+  const handleExportNote = (note: DepositNote) => {
+    const json = exportNoteBackup(note);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `obscell-note-${note.sessionId.slice(0, 8)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setStatusBanner({ tone: 'success', text: 'Note backup downloaded. Keep this safe!' });
+  };
+
+  const handleWithdrawAction = async () => {
+    if (!withdrawNoteString) {
+      setStatusBanner({ tone: 'error', text: 'Please enter a valid note string.' });
+      return;
+    }
+    try {
+      // Find note in vault
+      const parsedNote = JSON.parse(withdrawNoteString) as DepositNote;
+      const existing = vaultNotes.find(n => n.sessionId === parsedNote.sessionId);
+      if (!existing) {
+        // Import it first
+        await importNoteBackup(withdrawNoteString);
+        setVaultNotes(getNotesFromVault());
+      }
+      const activeNote = existing || parsedNote;
+      await handlePrepareWithdrawal(activeNote);
+    } catch (e) {
+      setStatusBanner({ tone: 'error', text: 'Invalid note format.' });
+    }
+  };
+
+  return (
+    <div className="min-h-screen w-full bg-[#0a0a0f] text-white flex flex-col items-center">
+      <div className="mesh-bg pointer-events-none"></div>
+
+      {/* NAVBAR */}
+      <header className="w-full px-8 py-5 flex justify-between items-center z-10 border-b border-white/5">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 cursor-pointer">
+             <Shield className="w-7 h-7 text-[#00f2ff]" />
+             <span className="text-xl font-orbitron font-bold tracking-wider">OBSCELL</span>
           </div>
-          <div>
-            <h1 className="text-2xl font-orbitron glow-text text-[#00f2ff]">
-              Obscell Mixer
-            </h1>
-            <p className="text-xs text-gray-400 tracking-widest uppercase">
-              Privacy-Aggron Protocol
-            </p>
-          </div>
+          <nav className="hidden md:flex gap-6 text-sm text-gray-400">
+            <a href="#" className="hover:text-white transition-colors">Voting</a>
+            <a href="#" className="hover:text-white transition-colors">Compliance</a>
+            <a href="#" className="hover:text-white transition-colors">Docs</a>
+          </nav>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded bg-white/5 border border-white/10 text-xs">
+            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span>Aggron Testnet</span>
+          </div>
           {walletAddress ? (
-            <div className="glass-card px-6 py-3 flex items-center gap-4 border-[#00f2ff]/30">
-              <div className="flex flex-col items-end">
-                <span className="text-[10px] text-[#00f2ff] uppercase tracking-tighter">
-                  Connected
-                </span>
-                <span className="font-orbitron text-sm">
-                  {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                </span>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00f2ff] to-[#7000ff] shadow-[0_0_15px_rgba(0,242,255,0.4)]" />
+            <div className="px-4 py-1.5 bg-[#00f2ff]/10 border border-[#00f2ff]/30 text-[#00f2ff] rounded text-sm font-orbitron">
+              {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
             </div>
           ) : (
             <button
               onClick={handleConnect}
-              className="glass-card px-6 py-3 flex items-center gap-3 hover:bg-white/10 transition-colors group cursor-pointer"
+              className="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-sm transition-colors"
             >
-              <Wallet className="w-5 h-5 text-[#00f2ff] group-hover:scale-110 transition-transform" />
-              <span className="font-orbitron text-sm font-bold">Connect Wallet</span>
+              <Wallet className="w-4 h-4 inline-block mr-2" />
+              Connect
             </button>
           )}
+          <button className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors text-gray-400 hover:text-white">
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
-      <div className="w-full max-w-6xl mb-8 flex gap-4 border-b border-white/10 pb-4">
-        <button
-          onClick={() => setActiveTab("mixer")}
-          className={`font-orbitron px-4 py-2 rounded-lg transition-colors ${activeTab === "mixer" ? "bg-[#00f2ff]/10 text-[#00f2ff] border border-[#00f2ff]/30" : "text-gray-400 hover:text-white hover:bg-white/5"}`}
-        >
-          Mixing Pools
-        </button>
-        <button
-          onClick={() => setActiveTab("vault")}
-          className={`font-orbitron px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${activeTab === "vault" ? "bg-[#7000ff]/10 text-[#a040ff] border border-[#7000ff]/30" : "text-gray-400 hover:text-white hover:bg-white/5"}`}
-        >
-          <Shield className="w-4 h-4" /> My Vault
-        </button>
-      </div>
-
-      {statusBanner && (
-        <div className={`w-full max-w-6xl mb-8 rounded-2xl border px-5 py-4 text-sm ${getBannerClasses(statusBanner.tone)}`}>
-          {statusBanner.text}
-        </div>
-      )}
-
-      {activeTab === "mixer" ? (
-        <main className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-7 flex flex-col gap-6">
-            <section>
-              <div className="flex items-center justify-between mb-6 gap-4">
-                <h2 className="text-xl font-orbitron flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-yellow-400" /> Active Pools
-                </h2>
-                <div className="text-xs uppercase tracking-[0.2em] text-gray-500">
-                  Runtime: {runtimeMode}
-                </div>
+      {/* MAIN CONTENT */}
+      <main className="w-full max-w-5xl px-4 py-16 grid grid-cols-1 md:grid-cols-2 gap-12 z-10">
+        
+        {/* LEFT COLUMN: ACTION CARD */}
+        <div className="flex flex-col">
+          <div className="flex mb-0 w-full relative">
+            <button
+              onClick={() => setActiveTab("deposit")}
+              className={`flex-1 py-4 text-center font-orbitron font-bold tracking-wider rounded-t-xl z-10 transition-all ${activeTab === "deposit" ? "bg-[#111116] text-white border-t border-l border-r border-[#00f2ff]/30" : "bg-[#0c0c11] text-gray-500 border-b border-[#00f2ff]/30 hover:text-gray-300"}`}
+              style={{ clipPath: 'polygon(0 0, 85% 0, 100% 100%, 0% 100%)' }}
+            >
+              Deposit
+            </button>
+            <button
+              onClick={() => setActiveTab("withdraw")}
+              className={`flex-1 py-4 text-center font-orbitron font-bold tracking-wider rounded-t-xl transition-all ${activeTab === "withdraw" ? "bg-[#111116] text-white border-t border-l border-r border-[#00f2ff]/30 z-10" : "bg-[#0c0c11] text-gray-500 border-b border-[#00f2ff]/30 hover:text-gray-300"}`}
+              style={{ clipPath: 'polygon(0 100%, 15% 0, 100% 0, 100% 100%)', marginLeft: '-15%' }}
+            >
+              Withdraw
+            </button>
+          </div>
+          
+          <div className="bg-[#111116] border border-t-0 border-[#00f2ff]/30 rounded-b-xl p-8 shadow-2xl relative overflow-hidden">
+            
+            {statusBanner && (
+              <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${getBannerClasses(statusBanner.tone)}`}>
+                {statusBanner.text}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {pools.map(pool => (
-                  <div
-                    key={pool.denomination}
-                    className={`glass-card p-6 relative overflow-hidden group transition-all ${pool.available ? "cursor-pointer" : "opacity-60"} ${selectedPool === pool.denomination ? "border-[#00f2ff]" : ""}`}
-                    onClick={() => !depositBusy && void startMixing(pool)}
-                  >
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                      <Lock className="w-12 h-12" />
-                    </div>
-                    <div className="flex justify-between items-start mb-4 gap-4">
-                      <div>
-                        <span className="text-sm text-gray-400 uppercase">
-                          Fixed Amount
-                        </span>
-                        <h3 className="text-3xl font-orbitron text-white">
-                          {pool.denomination} CT
-                        </h3>
-                      </div>
-                      <div className={`text-[10px] uppercase px-3 py-1 rounded-full border ${pool.available ? "border-emerald-400/30 text-emerald-300 bg-emerald-500/10" : "border-white/10 text-gray-400 bg-white/5"}`}>
-                        {pool.statusLabel}
+            )}
+
+            {activeTab === "deposit" ? (
+              <AnimatePresence mode="wait">
+                {!isMixing ? (
+                  <motion.div key="deposit-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <div className="mb-8">
+                      <label className="text-gray-400 text-sm mb-2 block">Token</label>
+                      <div className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between cursor-not-allowed">
+                        <span className="font-semibold text-white">CKB (CoNervos)</span>
+                        <ArrowRight className="w-4 h-4 text-gray-500 rotate-90" />
                       </div>
                     </div>
-                    <div className="flex justify-between items-end mb-4">
-                      <div className="text-right">
-                        <div className="flex items-center gap-1 text-[#00f2ff]">
-                          <Users className="w-4 h-4" />
-                          <span className="font-orbitron">
-                            {pool.participants}/{pool.maxParticipants}
-                          </span>
+
+                    <div className="mb-10">
+                      <div className="flex items-center gap-2 mb-4">
+                        <label className="text-gray-400 text-sm">Amount</label>
+                        <Info className="w-3.5 h-3.5 text-[#00f2ff] cursor-help" />
+                      </div>
+                      
+                      <div className="relative pt-2 pb-6">
+                        <div className="absolute top-4 left-4 right-4 h-[2px] bg-[#00f2ff]/30 z-0"></div>
+                        <div className="flex justify-between relative z-10">
+                          {pools.map(pool => (
+                            <div key={pool.denomination} className="flex flex-col items-center">
+                              <button
+                                onClick={() => setSelectedPool(pool.denomination)}
+                                disabled={!pool.available}
+                                className={`w-5 h-5 rounded-full border-2 bg-[#111116] transition-all ${selectedPool === pool.denomination ? 'border-[#00f2ff] scale-125' : 'border-gray-500 hover:border-gray-400'} ${!pool.available ? 'opacity-30 cursor-not-allowed' : ''}`}
+                              />
+                              <span className={`mt-3 text-xs font-orbitron ${selectedPool === pool.denomination ? 'text-[#00f2ff]' : 'text-gray-500'}`}>
+                                {pool.denomination} CT
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                        <span className="text-[10px] text-gray-500 uppercase">
-                          Participants
-                        </span>
                       </div>
                     </div>
-                    <div className="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-[#00f2ff] to-[#7000ff]"
-                        initial={{ width: 0 }}
-                        animate={{
-                          width: `${pool.maxParticipants > 0 ? (pool.participants / pool.maxParticipants) * 100 : 0}%`,
-                        }}
-                      />
+
+                    <button
+                      className="w-full py-4 rounded-lg bg-gradient-to-r from-[#00f2ff] to-[#00a2ff] text-black font-orbitron font-bold text-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                      onClick={() => walletAddress ? startMixing() : handleConnect()}
+                      disabled={depositBusy || !currentPool.available}
+                    >
+                      {depositBusy ? "Processing..." : walletAddress ? "Deposit" : "Connect"}
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.div key="deposit-mixing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-6">
+                    <h3 className="text-xl font-orbitron mb-8 text-[#00f2ff]">Preparing Deposit</h3>
+                    <div className="relative w-40 h-40 mb-8">
+                      <svg className="w-full h-full transform -rotate-90">
+                        <circle cx="80" cy="80" r="70" stroke="rgba(0,242,255,0.1)" strokeWidth="6" fill="none" />
+                        <motion.circle cx="80" cy="80" r="70" stroke="#00f2ff" strokeWidth="6" fill="none" strokeDasharray="440" animate={{ strokeDashoffset: 440 - (440 * mixingStep) / 100 }} />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-3xl font-orbitron glow-text">{mixingStep}%</span>
+                      </div>
                     </div>
+                    {mixingStep === 100 ? (
+                      <button className="w-full py-3 rounded-lg border border-[#00f2ff] text-[#00f2ff] hover:bg-[#00f2ff]/10 transition-colors" onClick={() => { setIsMixing(false); setActiveTab("withdraw"); }}>
+                        Go to Withdraw
+                      </button>
+                    ) : (
+                      <p className="text-gray-400 text-sm animate-pulse">Generating Zero-Knowledge Proof...</p>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            ) : (
+              <AnimatePresence mode="wait">
+                <motion.div key="withdraw-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <div className="mb-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="text-gray-400 text-sm">Note</label>
+                      <button onClick={handleImportNote} className="text-xs text-[#00f2ff] hover:underline flex items-center gap-1">
+                        <Upload className="w-3 h-3" /> Import
+                      </button>
+                    </div>
+                    <textarea 
+                      className="w-full bg-[#1a1a24] border border-white/10 rounded-lg p-3 text-xs text-gray-300 font-mono resize-none focus:border-[#00f2ff]/50 outline-none transition-colors"
+                      rows={5}
+                      placeholder="Please paste your deposit note here..."
+                      value={withdrawNoteString}
+                      onChange={(e) => setWithdrawNoteString(e.target.value)}
+                    />
+                  </div>
+                  
+                  {vaultNotes.length > 0 && (
+                    <div className="mb-8">
+                      <label className="text-gray-500 text-xs mb-2 block uppercase tracking-wider">Or select from Vault</label>
+                      <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                        {vaultNotes.filter(n => n.withdrawalStatus !== 'submitted').map(note => (
+                          <div 
+                            key={note.sessionId} 
+                            onClick={() => setWithdrawNoteString(JSON.stringify(note, null, 2))}
+                            className="bg-[#1a1a24] border border-white/5 hover:border-[#00f2ff]/30 p-2 rounded cursor-pointer transition-colors flex justify-between items-center gap-3"
+                          >
+                            <div className="min-w-0">
+                              <span className="text-xs text-gray-300 font-mono truncate max-w-[200px] block">{note.sessionId}</span>
+                              <span className="text-[10px] text-gray-500">{note.denomination} CT</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleExportNote(note);
+                              }}
+                              className="shrink-0 rounded border border-white/10 p-1.5 text-gray-400 hover:border-[#00f2ff]/30 hover:text-[#00f2ff] transition-colors"
+                              title="Export note backup"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      className="flex-1 py-4 rounded-lg bg-[#1a1a24] border border-white/10 text-white font-orbitron hover:bg-white/5 transition-colors disabled:opacity-50"
+                      onClick={() => handleWithdrawAction()}
+                      disabled={withdrawalBusyId !== null}
+                    >
+                      Prepare Proof
+                    </button>
+                    
+                    {/* If we have a prepared proof for the current note, show broadcast options */}
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(withdrawNoteString) as DepositNote;
+                        const noteId = getNoteId(parsed);
+                        const prepared = preparedWithdrawals[noteId];
+                        if (prepared) {
+                          return (
+                            <>
+                              <button
+                                className="flex-1 py-4 rounded-lg bg-gradient-to-r from-[#00f2ff] to-[#00a2ff] text-black font-orbitron font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                                onClick={() => handleBroadcastWithdrawal(parsed)}
+                                disabled={!runtimeReady || !walletAddress || broadcastBusyId !== null || relayBusyId !== null}
+                              >
+                                {broadcastBusyId === noteId ? "Broadcasting..." : "Broadcast"}
+                              </button>
+                              <button
+                                className="flex-1 py-4 rounded-lg bg-gradient-to-r from-[#7000ff] to-[#a040ff] text-white font-orbitron font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                                onClick={() => handleRelayWithdrawal(parsed)}
+                                disabled={relayBusyId !== null || broadcastBusyId !== null}
+                              >
+                                {relayBusyId === noteId ? "Relaying..." : "Relay Private"}
+                              </button>
+                            </>
+                          );
+                        }
+                      } catch(e) {}
+                      return null;
+                    })()}
+                  </div>
+
+                  {(() => {
+                    try {
+                      const parsed = JSON.parse(withdrawNoteString) as DepositNote;
+                      const noteId = getNoteId(parsed);
+                      const prepared = preparedWithdrawals[noteId];
+                      const txHash = prepared?.broadcastTxHash ?? parsed.lastBroadcastHash;
+                      if (!txHash) {
+                        return null;
+                      }
+
+                      return (
+                        <div className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                          Broadcast tx:
+                          {" "}
+                          <a
+                            href={getExplorerTxUrl(txHash)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono underline underline-offset-2"
+                          >
+                            {txHash.slice(0, 12)}...{txHash.slice(-8)}
+                          </a>
+                        </div>
+                      );
+                    } catch {
+                      return null;
+                    }
+                  })()}
+                </motion.div>
+              </AnimatePresence>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: STATISTICS */}
+        <div className="flex flex-col pt-2">
+          <div className="flex mb-4 gap-4 items-end">
+            <h2 className="text-xl font-orbitron font-bold">Statistics</h2>
+            <div className="px-3 py-1 bg-[#00f2ff]/10 border border-[#00f2ff]/30 text-[#00f2ff] text-xs font-bold rounded">
+              {currentPool.denomination} CT
+            </div>
+          </div>
+          
+          <div className="bg-[#111116] border border-white/10 rounded-xl p-6 flex flex-col gap-8">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm text-gray-400">Anonymity set</span>
+                <Info className="w-3.5 h-3.5 text-[#00f2ff] cursor-help" />
+              </div>
+              <div className="text-3xl font-orbitron text-white">
+                {currentPool.participants} <span className="text-sm text-gray-500">/ {currentPool.maxParticipants}</span>
+              </div>
+            </div>
+
+            <div>
+              <span className="text-sm text-gray-400 mb-4 block">Latest deposits</span>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className={`h-6 rounded bg-white/5 border border-white/5 flex items-center px-2 ${i < currentPool.participants ? 'opacity-100' : 'opacity-20'}`}>
+                    {i < currentPool.participants && (
+                      <span className="text-[10px] font-mono text-gray-400">0x...{(Math.random() * 10000).toFixed(0).padStart(4, '0')}</span>
+                    )}
                   </div>
                 ))}
               </div>
-            </section>
-
-            <section className="glass-card p-6 border-dashed border-gray-700 bg-transparent">
-              <div className="flex items-start gap-4">
-                <div className="p-2 bg-blue-500/10 rounded-lg">
-                  <AlertCircle className="w-6 h-6 text-blue-400" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-blue-400 mb-1">
-                    Current Product Boundary
-                  </h4>
-                  <p className="text-sm text-gray-400 leading-relaxed">
-                    The current repo can now generate canonical deposit notes, browser-side Groth16 proofs,
-                    and withdrawal previews from one shared SDK shape. Deposit coordination is still a preview/demo
-                    flow until a real Aggron session coordinator and CT input sourcing are added.
-                  </p>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <div className="lg:col-span-5">
-            <AnimatePresence mode="wait">
-              {!isMixing ? (
-                <motion.div
-                  key="join"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="glass-card p-8 h-full flex flex-col justify-center items-center text-center"
-                >
-                  <div className="w-20 h-20 bg-[#00f2ff]/10 rounded-full flex items-center justify-center mb-6 animate-pulse-slow">
-                    <Lock className="w-10 h-10 text-[#00f2ff]" />
-                  </div>
-                  <h2 className="text-2xl font-orbitron mb-4">Prepare Deposit Note</h2>
-                  <p className="text-gray-400 mb-6 max-w-xs">
-                    Join the 100 CT flow to produce a canonical vault note that can later generate
-                    a Groth16 withdrawal proof directly in your browser.
-                  </p>
-                  <p className="text-xs text-gray-500 mb-8 max-w-sm">
-                    Runtime mode: <span className="text-gray-300">{runtimeMode}</span>. Withdrawal authority:
-                    <span className="text-gray-300"> {withdrawalAuthority}</span>.
-                  </p>
-                  {walletAddress ? (
-                    <button
-                      className="btn-primary w-full max-w-xs flex items-center justify-center gap-2"
-                      onClick={() => void startMixing(pools[0])}
-                      disabled={depositBusy}
-                    >
-                      {depositBusy ? "Preparing..." : "Join 100 CT Flow"} <ArrowRight className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <button
-                      className="btn-primary w-full max-w-xs flex items-center justify-center gap-2 opacity-80"
-                      onClick={handleConnect}
-                    >
-                      Connect Wallet to Begin <Wallet className="w-4 h-4" />
-                    </button>
-                  )}
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="mixing"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="glass-card p-8 h-full flex flex-col"
-                >
-                  <h2 className="text-xl font-orbitron mb-8 flex items-center justify-between">
-                    <span>Deposit Preparation</span>
-                    <span className="text-sm font-normal text-gray-500">
-                      {selectedPoolState ? `${selectedPoolState.denomination} CT` : "Active"}
-                    </span>
-                  </h2>
-
-                  <div className="flex-1 flex flex-col justify-center">
-                    <div className="relative w-48 h-48 mx-auto mb-12">
-                      <svg className="w-full h-full transform -rotate-90">
-                        <circle
-                          cx="96"
-                          cy="96"
-                          r="80"
-                          stroke="rgba(255,255,255,0.05)"
-                          strokeWidth="8"
-                          fill="none"
-                        />
-                        <motion.circle
-                          cx="96"
-                          cy="96"
-                          r="80"
-                          stroke="#00f2ff"
-                          strokeWidth="8"
-                          fill="none"
-                          strokeDasharray="502"
-                          animate={{
-                            strokeDashoffset: 502 - (502 * mixingStep) / 100,
-                          }}
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-4xl font-orbitron glow-text">
-                          {mixingStep}%
-                        </span>
-                        <span className="text-[10px] text-gray-500 uppercase">
-                          Synchronizing
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <MixingStep
-                        label="Collecting Deposit Inputs"
-                        status={mixingStep > 20 ? "done" : "active"}
-                      />
-                      <MixingStep
-                        label="Generating Stealth Output"
-                        status={
-                          mixingStep > 50
-                            ? "done"
-                            : mixingStep > 20
-                              ? "active"
-                              : "pending"
-                        }
-                      />
-                      <MixingStep
-                        label="Building Session Commitments"
-                        status={
-                          mixingStep > 80
-                            ? "done"
-                            : mixingStep > 50
-                              ? "active"
-                              : "pending"
-                        }
-                      />
-                      <MixingStep
-                        label="Saving Canonical Vault Note"
-                        status={
-                          mixingStep >= 100
-                            ? "done"
-                            : mixingStep > 80
-                              ? "active"
-                              : "pending"
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  {mixingStep === 100 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-8 flex flex-col gap-3"
-                    >
-                      <button
-                        className="btn-primary w-full"
-                        onClick={() => {
-                          setActiveTab("vault");
-                          setIsMixing(false);
-                        }}
-                      >
-                        Open Vault
-                      </button>
-                      <button
-                        className="text-sm text-gray-500 hover:text-white transition-colors"
-                        onClick={() => setIsMixing(false)}
-                      >
-                        Close Session
-                      </button>
-                    </motion.div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </main>
-      ) : (
-        <main className="w-full max-w-6xl flex flex-col gap-6">
-          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-4">
-            <div>
-              <h2 className="text-2xl font-orbitron flex items-center gap-3">
-                <Shield className="w-6 h-6 text-[#a040ff]" /> My Secure Vault
-              </h2>
-              <p className="text-sm text-gray-400 mt-2">
-                Generate a browser-side Groth16 proof from a saved deposit note and
-                prepare the withdrawal transaction against the configured runtime mode.
-              </p>
             </div>
-            <div className={`text-sm px-4 py-3 rounded-xl border ${runtimeReady ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : runtimeMode === "preview" ? "border-amber-400/30 bg-amber-500/10 text-amber-100" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`}>
-              <div className="font-semibold">
-                {runtimeReady ? "Aggron Live Metadata Ready" : runtimeMode === "preview" ? "Preview Runtime Mode" : "Runtime Disabled"}
-              </div>
-              <div className="text-xs mt-1 opacity-80">
-                {runtimeReady
-                  ? "Deployment pointers were found, so the app can pair proofs with the live nullifier registry."
-                  : runtimeStatus.error ?? "Runtime config is incomplete, so withdrawals stay in local preview mode."}
+          </div>
+          
+          <div className="mt-8 bg-blue-500/10 border border-blue-500/20 rounded-xl p-5 flex items-start gap-4">
+            <AlertCircle className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-200/80 leading-relaxed">
+              <strong className="text-blue-400 block mb-1">Current Product Boundary</strong>
+              The current repo can now generate canonical deposit notes, browser-side Groth16 proofs,
+              and withdrawal previews from one shared SDK shape. Deposit coordination is still a preview/demo
+              flow until a real Aggron session coordinator and CT input sourcing are added.
+              <div className="mt-3 space-y-1 text-xs text-blue-100/80">
+                <div>Runtime: {runtimeReady ? "live withdrawal metadata ready" : runtimeMode}</div>
+                <div>Deposits: {liveDepositEnabled ? "live coordinator path enabled" : "preview note flow only"}</div>
+                {relayerInfo && (
+                  <div>
+                    Relayer: {relayerInfo.network} at {relayerInfo.feePercent}% fee
+                  </div>
+                )}
               </div>
             </div>
           </div>
+        </div>
+      </main>
 
-          {vaultNotes.length === 0 ? (
-            <div className="glass-card p-16 flex flex-col items-center justify-center text-center border-dashed border-gray-700/50">
-              <Lock className="w-16 h-16 text-gray-700 mb-6" />
-              <h3 className="text-xl font-orbitron mb-2 text-gray-300">No Deposit Notes Found</h3>
-              <p className="text-gray-500 max-w-md">
-                Prepare a 100 CT deposit note to save it here. The vault now stores the
-                canonical note schema, proof-encoding metadata, and session commitments
-                required for browser-side proof generation.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {vaultNotes.map(note => {
-                const noteId = getNoteId(note);
-                const prepared = preparedWithdrawals[noteId];
-                const isPreparing = withdrawalBusyId === noteId;
-                const isBroadcasting = broadcastBusyId === noteId;
-                const supported = note.denomination === SUPPORTED_DENOMINATION;
-
-                return (
-                  <div key={noteId} className="glass-card p-6 flex flex-col gap-4 border-[#7000ff]/30">
-                    <div className="flex justify-between items-start gap-4">
-                      <div>
-                        <span className="text-[10px] text-gray-500 uppercase tracking-widest">Amount</span>
-                        <h3 className="text-2xl font-orbitron text-white">{note.denomination} CT</h3>
-                      </div>
-                      <div className={`px-3 py-1 rounded-full text-[10px] uppercase border ${note.withdrawalStatus === "submitted" ? "border-sky-400/30 bg-sky-500/10 text-sky-200" : note.withdrawalStatus === "proof-ready" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/5 text-gray-400"}`}>
-                        {note.withdrawalStatus === "submitted" ? "Broadcasted" : note.withdrawalStatus === "proof-ready" ? "Proof Ready" : "Awaiting Proof"}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-[10px] text-gray-500 uppercase block">Session ID</span>
-                        <span className="text-xs text-gray-300 font-mono truncate block">{note.sessionId}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 uppercase block">Commitment</span>
-                        <span className="text-xs text-gray-300 font-mono truncate block">{note.commitment?.slice(0, 18)}...</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 uppercase block">Proof Encoding</span>
-                        <span className="text-xs text-gray-400">{note.proofEncoding ?? "unknown"}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 uppercase block">Session Size</span>
-                        <span className="text-xs text-gray-400">
-                          {note.sessionCommitments?.length ?? 1} commitments in this saved session
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 uppercase block">Created At</span>
-                        <span className="text-xs text-gray-400">{new Date(note.createdAt).toLocaleString()}</span>
-                      </div>
-                    </div>
-
-                    <button
-                      className={`btn-primary w-full mt-2 ${supported ? "bg-gradient-to-r from-[#7000ff] to-[#a040ff] text-white" : "opacity-50 cursor-not-allowed"}`}
-                      disabled={!supported || isPreparing}
-                      onClick={() => void handlePrepareWithdrawal(note)}
-                    >
-                      {isPreparing
-                        ? "Generating Proof..."
-                        : prepared
-                          ? "Regenerate Proof Preview"
-                          : "Generate Proof & Prepare Withdrawal"}
-                    </button>
-
-                    <button
-                      className={`btn-primary w-full ${
-                        prepared?.mode === 'aggron-preview' && walletAddress
-                          ? 'bg-gradient-to-r from-[#00f2ff] to-[#0082ff] text-black'
-                          : 'opacity-50 cursor-not-allowed'
-                      }`}
-                      disabled={!prepared || prepared.mode !== 'aggron-preview' || !walletAddress || isPreparing || isBroadcasting || relayBusyId === noteId}
-                      onClick={() => void handleBroadcastWithdrawal(note)}
-                    >
-                      {isBroadcasting ? 'Broadcasting...' : 'Sign With JoyID & Broadcast'}
-                    </button>
-
-                    <button
-                      className={`btn-primary w-full ${
-                        prepared?.mode === 'aggron-preview'
-                          ? 'bg-gradient-to-r from-[#7000ff] to-[#a040ff] text-white'
-                          : 'opacity-50 cursor-not-allowed'
-                      }`}
-                      disabled={!prepared || prepared.mode !== 'aggron-preview' || isPreparing || isBroadcasting || relayBusyId === noteId}
-                      onClick={() => void handleRelayWithdrawal(note)}
-                      title="Submit proof to the off-chain relayer. No JoyID signing needed — your identity stays private."
-                    >
-                      {relayBusyId === noteId ? 'Relaying…' : '🔒 Relay (Private, No Wallet Needed)'}
-                    </button>
-
-                    {!supported && (
-                      <p className="text-xs text-amber-200/80">
-                        This is a legacy UI denomination. The deployed contracts only support 100 CT withdrawals.
-                      </p>
-                    )}
-
-                    {supported && !walletAddress && (
-                      <p className="text-xs text-gray-400">
-                        Connect the JoyID wallet that controls the live registry lock to sign and broadcast from the browser.
-                      </p>
-                    )}
-
-                    {prepared?.mode === "local-preview" && (
-                      <p className="text-xs text-amber-100/80">
-                        This note is only prepared for local preview right now. Switch the runtime config to live before attempting a broadcast.
-                      </p>
-                    )}
-
-                    {prepared && (
-                      <div className="rounded-2xl border border-[#00f2ff]/20 bg-[#00f2ff]/5 p-4 space-y-3">
-                        <div className="flex justify-between items-center gap-4">
-                          <span className="text-sm font-semibold text-[#00f2ff]">
-                            {prepared.mode === "aggron-preview" ? "Aggron Registry Preview" : "Local Registry Preview"}
-                          </span>
-                          <span className="text-[10px] uppercase text-gray-400">
-                            {new Date(prepared.preparedAt).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-gray-500 uppercase block">Nullifier</span>
-                          <span className="text-xs text-gray-300 font-mono break-all">{prepared.transaction.nullifier}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-gray-500 uppercase block">Merkle Root</span>
-                          <span className="text-xs text-gray-300 font-mono break-all">{prepared.proof.publicInputs.merkleRoot}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-gray-500 uppercase block">Submission Mode</span>
-                          <span className="text-xs text-gray-300">
-                            {prepared.transaction.submission.runtimeMode} / {prepared.transaction.submission.authorityMode}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 text-xs text-gray-400">
-                          <div>Session size: {prepared.sessionSize}</div>
-                          <div>Registry entries: {prepared.registrySize}</div>
-                          <div>Witness bytes: {prepared.proof.snarkProof?.length ?? prepared.proof.serializedWitness.length}</div>
-                          <div>Outputs: {prepared.transaction.outputs.length}</div>
-                        </div>
-                        {(prepared.broadcastTxHash || note.lastBroadcastHash) && (
-                          <div>
-                            <span className="text-[10px] text-gray-500 uppercase block">Broadcast Tx</span>
-                            <span className="text-xs text-gray-300 font-mono break-all">
-                              {prepared.broadcastTxHash ?? note.lastBroadcastHash}
-                            </span>
-                          </div>
-                        )}
-                        {prepared.warnings.length > 0 && (
-                          <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-2">
-                            {prepared.warnings.map(warning => (
-                              <p key={warning}>{warning}</p>
-                            ))}
-                          </div>
-                        )}
-                        <details className="rounded-xl border border-white/10 bg-black/20 p-3">
-                          <summary className="cursor-pointer text-sm text-gray-300">
-                            Raw withdrawal transaction
-                          </summary>
-                          <pre className="mt-3 overflow-x-auto text-[11px] leading-5 text-gray-400 whitespace-pre-wrap break-all">
-                            {prepared.rawTransactionJson}
-                          </pre>
-                        </details>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </main>
-      )}
-
-      <footer className="mt-20 text-gray-600 text-xs tracking-widest uppercase flex gap-8 flex-wrap justify-center">
-        <span>Network: CKB Aggron Testnet</span>
-        <span>Supported Pool: 100 CT</span>
-        <span>Proofs: Groth16 in Browser</span>
+      {/* FOOTER */}
+      <footer className="mt-auto w-full py-6 px-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-500">
+        <div className="flex items-center gap-4">
+          <span>Obscell version: v0.1.0-alpha</span>
+          <a href="#" className="hover:text-white transition-colors">GitHub</a>
+          <a href="#" className="hover:text-white transition-colors">Docs</a>
+        </div>
+        <div className="flex items-center gap-4">
+          <span>Network: Aggron Testnet</span>
+          <span>Proofs: Groth16 Arkworks</span>
+        </div>
       </footer>
-    </div>
-  );
-}
-
-function MixingStep({
-  label,
-  status,
-}: {
-  label: string;
-  status: "done" | "active" | "pending";
-}) {
-  return (
-    <div
-      className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${status === "active" ? "bg-[#00f2ff]/5 border-[#00f2ff]/20" : "bg-transparent border-transparent"}`}
-    >
-      <span
-        className={`text-sm ${status === "pending" ? "text-gray-600" : status === "active" ? "text-[#00f2ff]" : "text-gray-400"}`}
-      >
-        {label}
-      </span>
-      {status === "done" ? (
-        <CheckCircle2 className="w-4 h-4 text-green-400" />
-      ) : status === "active" ? (
-        <div className="w-4 h-4 border-2 border-[#00f2ff] border-t-transparent rounded-full animate-spin" />
-      ) : (
-        <div className="w-2 h-2 rounded-full bg-gray-800" />
-      )}
     </div>
   );
 }

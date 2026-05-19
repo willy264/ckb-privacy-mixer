@@ -8,7 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  publicDir: '../circuits',
+  publicDir: 'public',
+  envDir: '../',
   envPrefix: ['VITE_', 'CKB_', 'MIXER_', 'NULLIFIER_', 'ZK_', 'STEALTH_', 'CT_'],
   plugins: [
     react(),

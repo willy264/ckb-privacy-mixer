@@ -142,7 +142,8 @@ export function createCoordinatorServer() {
                     });
                     
                     const denomination = BigInt(msg.denomination);
-                    const pool = findOrCreatePool(denomination);
+                    const minParticipants = parseInt(process.env.COORDINATOR_MIN_PARTICIPANTS ?? '5', 10);
+                    const pool = findOrCreatePool(denomination, minParticipants);
                     const participantId = joinPool(pool.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.outPoint);
 
                     currentPoolId = pool.poolId;
