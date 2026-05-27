@@ -1,6 +1,6 @@
 import type { DepositNote as MixerDepositNote } from 'mixer-sdk';
 
-export type WithdrawalMode = 'aggron-preview' | 'local-preview';
+export type WithdrawalMode = 'live';
 export type VaultWithdrawalStatus = 'idle' | 'proof-ready' | 'submitted';
 
 export interface DepositNote extends MixerDepositNote {
@@ -125,7 +125,7 @@ function migrateNote(note: any): DepositNote {
     merkleProof: note.merkleProof,
     proofEncoding: note.proofEncoding ?? 'groth16-bn254-arkworks-uncompressed-v1',
     depositTxHash: note.depositTxHash,
-    runtimeMode: note.runtimeMode ?? 'preview',
+    runtimeMode: note.runtimeMode ?? 'disabled',
     registrySnapshot: note.registrySnapshot,
     denomination: Number(note.denomination ?? 100),
     withdrawalStatus: note.withdrawalStatus ?? 'idle',
@@ -256,4 +256,3 @@ export async function importNoteBackup(jsonString: string): Promise<void> {
     throw new Error(`Failed to import note: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
-

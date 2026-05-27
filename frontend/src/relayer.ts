@@ -60,22 +60,16 @@ export async function fetchRelayerInfo(endpoint = getRelayerUrl()): Promise<Rela
  * Returns a job ID immediately; the transaction is broadcast asynchronously.
  */
 export async function submitToRelayer(
-    proofHex:         string,
     nullifierHex:     string,
-    merkleRoot:       string,
-    recipientAddress: string,
-    denomination:     string,
+    transaction:      unknown,
     endpoint = getRelayerUrl(),
 ): Promise<RelayJobResult> {
     const res = await fetch(`${endpoint}/relay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            proofHex,
             nullifierHex,
-            merkleRoot,
-            recipientAddress,
-            denomination,
+            transaction,
         }),
     });
 

@@ -1,13 +1,5 @@
 [target.riscv64imac-unknown-none-elf]
-rustflags = [
-    "-C",
-    "target-feature=-a",
-    "-Zunstable-options",
-    "-Cpanic=immediate-abort",
-]
-
-[unstable]
-build-std = ["core", "alloc"]
+rustflags = []
 
 [env]
 CLANG = "riscv64-unknown-elf-gcc.exe"

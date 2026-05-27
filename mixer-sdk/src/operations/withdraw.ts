@@ -119,7 +119,7 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
     const verifierOutputDataHex = `0x${serializeWithdrawalPublicInputsHex(proof.publicInputs)}`;
     const proofBytes = proof.packedGroth16Proof?.bytes ?? proof.snarkProof ?? proof.serializedWitness;
     const proofWitnessHex = `0x${Array.from(proofBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
-    const runtimeMode = note.runtimeMode ?? (registryCell.outPoint.startsWith('local-preview:') ? 'preview' : 'live');
+    const runtimeMode = note.runtimeMode ?? 'live';
     const authorityMode = note.registrySnapshot?.authority ?? 'operator-registry-lock';
 
     return {

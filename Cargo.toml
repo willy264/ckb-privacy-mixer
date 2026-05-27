@@ -6,7 +6,8 @@ members = [
     "contracts/mixer-pool-type",
     "contracts/nullifier-type",
     "contracts/zk-membership-type",
-    "tests"
+    "tests",
+    "tools/ct-mint-helper"
 ]
 
 [profile.release]

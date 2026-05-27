@@ -11,8 +11,8 @@ export interface PoolParticipant {
     commitment: string;
     /** The stealth output address this user wants to receive funds at. */
     stealthOutputAddress: string;
-    /** The outpoint of the user's input CKB cell. */
-    outPoint: string;
+    /** The user's wallet address for funding the transaction. */
+    walletAddress: string;
     /** ECDSA/JoyID signature over the mixed transaction, submitted in Step 2. */
     signature?: string;
     status: ParticipantStatus;
@@ -80,7 +80,7 @@ export function joinPool(
     poolId: string,
     commitment: string,
     stealthOutputAddress: string,
-    outPoint: string,
+    walletAddress: string,
 ): string {
     const pool = pools.get(poolId);
     if (!pool) throw new Error(`Pool not found: ${poolId}`);
@@ -91,7 +91,7 @@ export function joinPool(
         participantId,
         commitment,
         stealthOutputAddress,
-        outPoint,
+        walletAddress,
         status: 'waiting',
         joinedAt: Date.now(),
     });

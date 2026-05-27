@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "sessionId": "live_solo_19e43ebf89c",
+  "inputOutPoint": "0x793f26394fc345843846ea425372d6b7ec969af64cbb02c9a19e734e0b413489_0x0",
+  "blindingFactor": "0x00e82dca3049f826f675cdf437b254a1e1b956847f6cd964c2f7e2fc448edd0b",
+  "stealthOutputAddress": "0x032158efe05ab2bd61c9effa2110b9a208187b074d0f5ef7e804e16b2fd446676c75999626347266c6c09284b94e133890f1b1eb40",
+  "createdAt": 1779255999319,
+  "commitment": "0x1ee695699e996eaab7d9d430f25e9b317616cdba9184ea84cd8620de744df8ae",
+  "sessionCommitments": [
+    "0x1ee695699e996eaab7d9d430f25e9b317616cdba9184ea84cd8620de744df8ae"
+  ],
+  "leafIndex": 0,
+  "depositTxHash": "0x793f26394fc345843846ea425372d6b7ec969af64cbb02c9a19e734e0b413489",
+  "runtimeMode": "live",
+  "proofEncoding": "groth16-bn254-arkworks-uncompressed-v1",
+  "denomination": 100,
+  "registrySnapshot": {
+    "authority": "operator-registry-lock"
+  }
+}

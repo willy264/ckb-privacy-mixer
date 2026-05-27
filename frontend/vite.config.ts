@@ -11,6 +11,16 @@ export default defineConfig({
   publicDir: 'public',
   envDir: '../',
   envPrefix: ['VITE_', 'CKB_', 'MIXER_', 'NULLIFIER_', 'ZK_', 'STEALTH_', 'CT_'],
+  server: {
+    proxy: {
+      // Proxy RPC requests to testnet.ckb.dev to bypass browser CORS policies
+      '/rpc': {
+        target: 'https://testnet.ckb.dev',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/rpc/, '')
+      }
+    }
+  },
   plugins: [
     react(),
     nodePolyfills({

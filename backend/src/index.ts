@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import { createRelayerApp } from './relayer/server.js';
 import { createCoordinatorServer } from './coordinator/server.js';
 import { logger } from './utils/logger.js';

@@ -72,7 +72,7 @@ function readRuntimeMode(env: EnvLike, hasRegistry: boolean): RuntimeMode {
         return explicit;
     }
 
-    return hasRegistry ? 'live' : 'preview';
+    return hasRegistry ? 'live' : 'disabled';
 }
 
 function readWithdrawalAuthority(env: EnvLike): WithdrawalAuthorityMode {

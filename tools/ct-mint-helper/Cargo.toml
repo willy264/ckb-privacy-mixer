@@ -1,0 +1,12 @@
+[package]
+name = "ct-mint-helper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bulletproofs = { git = "https://github.com/zkcrypto/bulletproofs", rev = "04bce4e66013ff857ed462fd4206210544101461", default-features = false }
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "rand_core"] }
+merlin = { version = "3", default-features = false }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

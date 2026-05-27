@@ -70,13 +70,13 @@ export class CoordinatorClient {
         });
     }
 
-    joinPool(denomination: string, commitment: string, stealthOutputAddress: string, outPoint: string) {
+    joinPool(denomination: string, commitment: string, stealthOutputAddress: string, walletAddress: string) {
         this.send({
             type: 'join',
             denomination,
             commitment,
             stealthOutputAddress,
-            outPoint,
+            walletAddress,
         });
     }
 
@@ -107,6 +107,7 @@ export class CoordinatorClient {
 import { deriveCommitment, randomBlindingFactor } from 'mixer-sdk';
 import type { DepositResult } from 'mixer-sdk';
 import { signRawTransaction } from '@joyid/ckb';
+import { ensureJoyIdCellDep } from './withdrawal';
 
 /**
  * Drop-in replacement for `mixer-sdk`'s local `joinMix`, but routes over
@@ -115,11 +116,10 @@ import { signRawTransaction } from '@joyid/ckb';
 export async function joinLiveMix(params: {
     denomination: bigint;
     stealthOutputAddress: string;
-    inputOutPoint: string;
     walletAddress: string;
     onProgress?: (step: number) => void;
 }): Promise<DepositResult> {
-    const { denomination, stealthOutputAddress, inputOutPoint, walletAddress, onProgress } = params;
+    const { denomination, stealthOutputAddress, walletAddress, onProgress } = params;
     const blindingFactor = randomBlindingFactor();
     
     // We don't have the sessionId yet, so we mock the commitment derivation for the demo.
@@ -152,18 +152,21 @@ export async function joinLiveMix(params: {
                     }
                     const txToSign = JSON.parse(decodeURIComponent(escape(rawTxStr)));
                     
+                    // Inject JoyID CellDep into transaction structure
+                    const unsignedTransaction = ensureJoyIdCellDep(txToSign as any);
+                    
                     // We prompt JoyID to sign our specific input. We don't have witnessIndexes
                     // but we can just sign the whole tx. For a real CoinJoin, each participant
                     // signs their own input. JoyID's signRawTransaction signs the entire message.
-                    const signedTx = await signRawTransaction(txToSign, walletAddress);
+                    const signedTx = await signRawTransaction(unsignedTransaction as any, walletAddress);
                     
-                    // Extract the signature from the signed witness
-                    // The signature is usually in the witness. For JoyID, it appends it.
-                    // We'll just pass the first witness as our signature to the coordinator.
-                    // (This assumes the coordinator will place it in the correct witness index).
-                    const signature = (signedTx as any).witnesses?.[0] || '0x_mock_sig_fallback';
+                    // Send the full array of witnesses and cell deps so the coordinator can merge them
+                    const payload = {
+                        witnesses: (signedTx as any).witnesses || [],
+                        cellDeps: (signedTx as any).cellDeps || [],
+                    };
                     
-                    client.signTransaction(poolId, currentParticipantId, signature);
+                    client.signTransaction(poolId, currentParticipantId, JSON.stringify(payload));
                 } catch (error) {
                     client.disconnect();
                     reject(new Error(`JoyID signing failed: ${String(error)}`));
@@ -172,6 +175,8 @@ export async function joinLiveMix(params: {
             onBroadcast: async (poolId, txHash, sessionCommitments) => {
                 onProgress?.(100);
                 client.disconnect();
+
+                const inputOutPoint = '0x0_0x0';
 
                 // Re-derive the actual commitment using the real poolId
                 const finalCommitment = await deriveCommitment(blindingFactor, poolId);
@@ -204,7 +209,7 @@ export async function joinLiveMix(params: {
                     participantCommitments: actualCommitments,
                     stealthOutputAddress,
                     leafIndex: note.leafIndex,
-                    inputOutPoint,
+                    inputOutPoint: '0x0_0x0', // Mock outpoint for compatibility
                     note,
                     session: {
                         sessionId: poolId,
@@ -223,7 +228,7 @@ export async function joinLiveMix(params: {
             }
         }).then(() => {
             onProgress?.(10);
-            client.joinPool(denomination.toString(), initialCommitment, stealthOutputAddress, inputOutPoint);
+            client.joinPool(denomination.toString(), initialCommitment, stealthOutputAddress, walletAddress);
         }).catch(reject);
     });
 }

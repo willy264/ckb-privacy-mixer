@@ -1,3 +1,4 @@
+import '../env.js';
 import http from 'http';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -22,7 +23,7 @@ interface WsJoinMessage {
     denomination: string;       // e.g. "100"
     commitment: string;         // Pedersen commitment (public)
     stealthOutputAddress: string;
-    outPoint: string;
+    walletAddress: string;
 }
 
 interface WsSignMessage {
@@ -94,21 +95,21 @@ export function createCoordinatorServer() {
     // ── REST: join a pool (fallback for non-WS clients) ───────────────────────
     const joinRequestSchema = z.object({
         commitment: z.string().regex(/^0x[0-9a-fA-F]+$/, "Must be a valid hex string"),
-        stealthOutputAddress: z.string().regex(/^(ckt1|ckb1)/, "Must be a valid CKB address prefix"),
-        outPoint: z.string()
+        stealthOutputAddress: z.string().regex(/^0x[0-9a-fA-F]{106}$/, "Must be a valid 53-byte hex string starting with 0x"),
+        walletAddress: z.string()
     }).refine((data) => {
         try {
-            helpers.parseAddress(data.stealthOutputAddress, { config: lumosConfig.predefined.AGGRON4 });
+            helpers.parseAddress(data.walletAddress, { config: lumosConfig.predefined.AGGRON4 });
             return true;
         } catch {
             return false;
         }
-    }, { message: "Invalid CKB Address encoding", path: ["stealthOutputAddress"] });
+    }, { message: "Invalid wallet address encoding", path: ["walletAddress"] });
 
     app.post('/pools/:poolId/join', (req: Request, res: Response, next: NextFunction) => {
         try {
             const parsed = joinRequestSchema.parse(req.body);
-            const participantId = joinPool(req.params.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.outPoint);
+            const participantId = joinPool(req.params.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.walletAddress);
             res.json({ participantId });
         } catch (err) { next(err); }
     });
@@ -138,13 +139,13 @@ export function createCoordinatorServer() {
                     const parsed = joinRequestSchema.parse({
                         commitment: msg.commitment,
                         stealthOutputAddress: msg.stealthOutputAddress,
-                        outPoint: msg.outPoint
+                        walletAddress: msg.walletAddress
                     });
                     
                     const denomination = BigInt(msg.denomination);
                     const minParticipants = parseInt(process.env.COORDINATOR_MIN_PARTICIPANTS ?? '5', 10);
                     const pool = findOrCreatePool(denomination, minParticipants);
-                    const participantId = joinPool(pool.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.outPoint);
+                    const participantId = joinPool(pool.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.walletAddress);
 
                     currentPoolId = pool.poolId;
                     currentParticipantId = participantId;
@@ -163,7 +164,7 @@ export function createCoordinatorServer() {
 
                     // If the pool is now full, build the CoinJoin tx and notify all
                     if (pool.participants.length >= pool.requiredParticipants) {
-                        const txHex = buildCoinJoinTransaction(pool);
+                        const txHex = await buildCoinJoinTransaction(pool);
                         broadcastToPool(pool.poolId, {
                             type: 'pool_full',
                             poolId: pool.poolId,
@@ -206,6 +207,10 @@ export function createCoordinatorServer() {
                                 poolSockets.delete(msg.poolId);
                             }).catch((err) => {
                                 logger.error('[Coordinator] Broadcast error', { error: err.message });
+                                broadcastToPool(msg.poolId, {
+                                    type: 'error',
+                                    message: `Transaction broadcast failed: ${err.message}`
+                                });
                             });
                         }
                     } else {

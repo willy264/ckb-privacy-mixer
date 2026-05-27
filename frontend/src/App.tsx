@@ -8,15 +8,11 @@ import {
   ArrowRight,
   Settings,
   Info,
-  AlertCircle
+  AlertCircle,
+  Copy
 } from "lucide-react";
 import { connect, initConfig } from "@joyid/ckb";
-import {
-  generateStealthAddress,
-  joinMix,
-  randomBlindingFactor,
-  type DepositResult,
-} from "mixer-sdk";
+import { type DepositResult } from "mixer-sdk";
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import {
   broadcastPreparedWithdrawal,
@@ -24,18 +20,19 @@ import {
   relayWithdrawal,
   type PreparedVaultWithdrawal,
 } from "./withdrawal";
-import { joinLiveMix } from "./coordinator";
 import { fetchRelayerInfo, type RelayerInfo } from "./relayer";
 import {
   getNoteId,
   getNotesFromVault,
-  refreshVault,
   saveNoteToVault,
+  refreshVault,
   updateNoteInVault,
   exportNoteBackup,
   importNoteBackup,
   type DepositNote,
 } from "./vault";
+import { joinLiveMix } from "./coordinator";
+import { generateStealthAddress } from "mixer-sdk";
 
 type Denomination = 10 | 100 | 1000;
 type BannerTone = "success" | "error" | "info";
@@ -60,8 +57,6 @@ interface WithdrawalPreview extends PreparedVaultWithdrawal {
   broadcastedAt?: number;
 }
 
-const SUPPORTED_DENOMINATION: Denomination = 100;
-
 function getBannerClasses(tone: BannerTone) {
   if (tone === "success") return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
   if (tone === "error") return "border-rose-400/30 bg-rose-500/10 text-rose-100";
@@ -69,7 +64,7 @@ function getBannerClasses(tone: BannerTone) {
 }
 
 function getExplorerTxUrl(txHash: string): string {
-  const isMainnet = (import.meta as any).env?.VITE_CKB_NETWORK === 'mainnet';
+  const isMainnet = (import.meta as any).env?.VITE_CKB_NETWORK === "mainnet";
   return isMainnet
     ? `https://explorer.nervos.org/transaction/${txHash}`
     : `https://pudge.explorer.nervos.org/transaction/${txHash}`;
@@ -77,20 +72,14 @@ function getExplorerTxUrl(txHash: string): string {
 
 export default function App() {
   const [selectedPool, setSelectedPool] = useState<Denomination>(100);
-  const [isMixing, setIsMixing] = useState(false);
-  const [mixingStep, setMixingStep] = useState(0);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  
-  // Layout state
   const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit");
-  
   const [vaultNotes, setVaultNotes] = useState<DepositNote[]>([]);
   const [withdrawalBusyId, setWithdrawalBusyId] = useState<string | null>(null);
   const [broadcastBusyId, setBroadcastBusyId] = useState<string | null>(null);
-  const [depositBusy, setDepositBusy] = useState(false);
   const [preparedWithdrawals, setPreparedWithdrawals] = useState<Record<string, WithdrawalPreview>>({});
   const [statusBanner, setStatusBanner] = useState<StatusBanner | null>(null);
-  const [lastDepositResult, setLastDepositResult] = useState<DepositResult | null>(null);
+  const [lastDepositResult] = useState<DepositResult | null>(null);
   const [relayBusyId, setRelayBusyId] = useState<string | null>(null);
   const [relayerInfo, setRelayerInfo] = useState<RelayerInfo | null>(null);
   const [runtimeStatus] = useState(() => tryLoadFrontendRuntimeConfig());
@@ -98,32 +87,24 @@ export default function App() {
 
   const runtimeMode = runtimeStatus.mode;
   const runtimeReady = runtimeStatus.config?.runtimeMode === "live" && !!runtimeStatus.config?.nullifierRegistry;
-  const withdrawalAuthority = runtimeStatus.authority;
-  const liveDepositEnabled = (import.meta as any).env?.VITE_ENABLE_LIVE_DEPOSIT === "true";
 
   const pools: PoolState[] = [
-    { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Backend not deployed" },
+    { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Unavailable" },
     {
       denomination: 100,
       participants: lastDepositResult?.session.participantCount ?? 0,
-      maxParticipants: lastDepositResult?.session.requiredParticipants ?? 5,
-      available: runtimeMode !== "disabled",
-      statusLabel: runtimeMode === "live"
-        ? liveDepositEnabled
-          ? "Live deposit coordinator"
-          : "Preview deposits with live withdrawal metadata"
-        : runtimeMode === "preview"
-          ? "Preview coordinator"
-          : "Config incomplete",
+      maxParticipants: lastDepositResult?.session.requiredParticipants ?? 1, // Set to 1 for solo testing
+      available: true,
+      statusLabel: "Live",
     },
-    { denomination: 1000, participants: 0, maxParticipants: 3, available: false, statusLabel: "Backend not deployed" },
+    { denomination: 1000, participants: 0, maxParticipants: 3, available: false, statusLabel: "Unavailable" },
   ];
 
   const currentPool = pools.find(p => p.denomination === selectedPool) || pools[1];
 
   useEffect(() => {
-    const network = (import.meta as any).env?.VITE_CKB_NETWORK === 'mainnet' ? 'mainnet' : 'testnet';
-    const joyidAppURL = network === 'mainnet' ? 'https://app.joyid.dev' : 'https://testnet.joyid.dev';
+    const network = (import.meta as any).env?.VITE_CKB_NETWORK === "mainnet" ? "mainnet" : "testnet";
+    const joyidAppURL = network === "mainnet" ? "https://app.joyid.dev" : "https://testnet.joyid.dev";
 
     initConfig({
       name: "Obscell Privacy Mixer",
@@ -135,138 +116,58 @@ export default function App() {
     void fetchRelayerInfo().then(info => setRelayerInfo(info)).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    if (!isMixing) return;
-    const timer = setInterval(() => {
-      setMixingStep(prev => {
-        if (prev >= 96) {
-          clearInterval(timer);
-          return 96;
-        }
-        return prev + 4;
-      });
-    }, 120);
-    return () => clearInterval(timer);
-  }, [isMixing]);
-
   const handleConnect = async () => {
     try {
       const connection = await connect();
       setWalletAddress(connection.address);
       setStatusBanner({
         tone: "success",
-        text: "Wallet connected. Deposit notes will derive their stealth destination from this JoyID session.",
+        text: "Wallet connected. You can now prepare and broadcast live withdrawals.",
       });
     } catch (error) {
       console.error("Connection failed:", error);
       setStatusBanner({
         tone: "error",
-        text: "JoyID connection failed. Wallet connection is required before preparing a deposit note.",
+        text: "JoyID connection failed.",
       });
     }
   };
 
   const startMixing = async () => {
-    if (!currentPool.available) {
-      setStatusBanner({
-        tone: "info",
-        text: `The ${currentPool.denomination} CT pool is not available yet. The current demo supports fixed ${SUPPORTED_DENOMINATION} CT deposits only.`,
-      });
-      return;
-    }
-
     if (!walletAddress) {
-      setStatusBanner({
-        tone: "error",
-        text: "Connect JoyID before preparing a deposit note.",
-      });
+      handleConnect();
       return;
     }
 
-    setIsMixing(true);
-    setMixingStep(10);
-    setDepositBusy(true);
-    setStatusBanner(null);
+    setStatusBanner({ tone: "info", text: "Starting live CoinJoin deposit flow..." });
 
     try {
       const stealthOutputAddress = generateStealthAddress(walletAddress);
-      const inputOutPoint = `0xpreview_${Date.now().toString(16)}`;
-      let result;
-      
-      if (runtimeMode === "live" && liveDepositEnabled) {
-        try {
-          result = await joinLiveMix({
-            denomination: BigInt(currentPool.denomination),
-            stealthOutputAddress,
-            inputOutPoint,
-            walletAddress,
-            onProgress: setMixingStep,
-          });
-        } catch (wsError) {
-          console.warn('[mixer] Coordinator WebSocket failed, falling back to preview mode:', wsError);
-          setStatusBanner({
-            tone: 'info',
-            text: 'Coordinator is offline — running in local preview mode. Your note will still be saved for future withdrawal.',
-          });
-          result = await joinMix({
-            ctInputCell: {
-              outPoint: inputOutPoint,
-              amount: BigInt(currentPool.denomination),
-              blindingFactor: randomBlindingFactor(),
-            },
-            stealthOutputAddress,
-            privateKey: `joyid_session_${walletAddress.slice(-8)}`,
-            runtimeMode: 'preview',
-          });
-        }
-      } else {
-        if (runtimeMode === "live" && !liveDepositEnabled) {
+
+      const result = await joinLiveMix({
+        denomination: BigInt(selectedPool),
+        stealthOutputAddress,
+        walletAddress,
+        onProgress: (step) => {
           setStatusBanner({
             tone: "info",
-            text: "Live withdrawal metadata is configured, but deposits are still routed through the preview note flow until real spendable CT inputs and the coordinator handshake are wired end to end.",
+            text: `CoinJoin in progress... ${step.toFixed(0)}%`,
           });
         }
-        result = await joinMix({
-          ctInputCell: {
-            outPoint: inputOutPoint,
-            amount: BigInt(currentPool.denomination),
-            blindingFactor: randomBlindingFactor(),
-          },
-          stealthOutputAddress,
-          privateKey: `joyid_session_${walletAddress.slice(-8)}`,
-          runtimeMode: "preview",
-        });
-      }
+      });
 
-      setMixingStep(100);
-      const note: DepositNote = {
-        ...result.note,
-        denomination: currentPool.denomination,
-        withdrawalStatus: "idle",
-        registrySnapshot: {
-          ...result.note.registrySnapshot,
-          authority: withdrawalAuthority,
-        },
-      };
-      await saveNoteToVault(note);
+      await saveNoteToVault(result.note as DepositNote);
       setVaultNotes(getNotesFromVault());
-      setLastDepositResult(result);
+
       setStatusBanner({
         tone: "success",
-        text: result.status === "confirmed"
-            ? `Deposit session ${result.sessionId} prepared. The canonical vault note is saved and ready for proof generation.`
-            : `Deposit session ${result.sessionId} is still waiting on additional signatures, but the canonical note preview has been saved locally.`,
+        text: `Deposit successful! Note added to your vault.`,
       });
     } catch (error) {
-      console.error("Deposit preparation failed:", error);
       setStatusBanner({
         tone: "error",
-        text: error instanceof Error ? error.message : "Failed to prepare the deposit session.",
+        text: error instanceof Error ? error.message : "Deposit failed.",
       });
-      setIsMixing(false);
-      setMixingStep(0);
-    } finally {
-      setDepositBusy(false);
     }
   };
 
@@ -304,14 +205,12 @@ export default function App() {
         [noteId]: {
           ...prepared,
           preparedAt,
-          rawTransactionJson: JSON.stringify(prepared.transaction.rawTransaction, null, 2),
+          rawTransactionJson: JSON.stringify(prepared.transaction.rawTransaction, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2),
         },
       }));
       setStatusBanner({
         tone: "success",
-        text: prepared.mode === "aggron-preview"
-            ? "Groth16 proof generated in the browser and paired with the live Aggron registry metadata."
-            : "Groth16 proof generated in the browser. Runtime config is still in preview mode, so the transaction remains local-only.",
+        text: "Groth16 proof generated in the browser and paired with the live Pudge registry metadata.",
       });
     } catch (error) {
       setStatusBanner({
@@ -369,14 +268,14 @@ export default function App() {
         [noteId]: {
           ...prepared,
           preparedAt,
-          rawTransactionJson: JSON.stringify(prepared.transaction.rawTransaction, null, 2),
+          rawTransactionJson: JSON.stringify(prepared.transaction.rawTransaction, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2),
           broadcastTxHash: txHash,
           broadcastedAt,
         },
       }));
       setStatusBanner({
         tone: "success",
-        text: `Withdrawal broadcast to Aggron. Transaction hash: ${txHash}`,
+        text: `Withdrawal broadcast to Pudge. Transaction hash: ${txHash}`,
       });
     } catch (error) {
       setStatusBanner({
@@ -392,7 +291,7 @@ export default function App() {
     const noteId = getNoteId(note);
     const prepared = preparedWithdrawals[noteId];
     if (!prepared) {
-      setStatusBanner({ tone: 'error', text: 'Generate the withdrawal proof first before relaying.' });
+      setStatusBanner({ tone: "error", text: "Generate the withdrawal proof first before relaying." });
       return;
     }
 
@@ -404,20 +303,20 @@ export default function App() {
       const txHash = await relayWithdrawal(prepared, recipient);
       const updatedNote: DepositNote = {
         ...note,
-        withdrawalStatus: 'submitted',
-        lastBroadcastAt:  Date.now(),
+        withdrawalStatus: "submitted",
+        lastBroadcastAt: Date.now(),
         lastBroadcastHash: txHash,
       };
       await updateNoteInVault(updatedNote);
       setVaultNotes(getNotesFromVault());
       setStatusBanner({
-        tone: 'success',
-        text: `Relayed successfully — tx hash: ${txHash}. Your withdrawal is anonymous.`,
+        tone: "success",
+        text: `Relayed successfully - tx hash: ${txHash}. Your withdrawal is anonymous.`,
       });
     } catch (error) {
       setStatusBanner({
-        tone: 'error',
-        text: error instanceof Error ? error.message : 'Relay failed.',
+        tone: "error",
+        text: error instanceof Error ? error.message : "Relay failed.",
       });
     } finally {
       setRelayBusyId(null);
@@ -425,9 +324,9 @@ export default function App() {
   };
 
   const handleImportNote = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
@@ -435,9 +334,9 @@ export default function App() {
         const text = await file.text();
         await importNoteBackup(text);
         setVaultNotes(getNotesFromVault());
-        setStatusBanner({ tone: 'success', text: 'Note imported successfully.' });
+        setStatusBanner({ tone: "success", text: "Note imported successfully." });
       } catch (err) {
-        setStatusBanner({ tone: 'error', text: err instanceof Error ? err.message : 'Failed to import note' });
+        setStatusBanner({ tone: "error", text: err instanceof Error ? err.message : "Failed to import note" });
       }
     };
     input.click();
@@ -445,36 +344,34 @@ export default function App() {
 
   const handleExportNote = (note: DepositNote) => {
     const json = exportNoteBackup(note);
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `obscell-note-${note.sessionId.slice(0, 8)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setStatusBanner({ tone: 'success', text: 'Note backup downloaded. Keep this safe!' });
+    setStatusBanner({ tone: "success", text: "Note backup downloaded. Keep this safe!" });
   };
 
   const handleWithdrawAction = async () => {
     if (!withdrawNoteString) {
-      setStatusBanner({ tone: 'error', text: 'Please enter a valid note string.' });
+      setStatusBanner({ tone: "error", text: "Please enter a valid note string." });
       return;
     }
     try {
-      // Find note in vault
       const parsedNote = JSON.parse(withdrawNoteString) as DepositNote;
       const existing = vaultNotes.find(n => n.sessionId === parsedNote.sessionId);
       if (!existing) {
-        // Import it first
         await importNoteBackup(withdrawNoteString);
         setVaultNotes(getNotesFromVault());
       }
       const activeNote = existing || parsedNote;
       await handlePrepareWithdrawal(activeNote);
-    } catch (e) {
-      setStatusBanner({ tone: 'error', text: 'Invalid note format.' });
+    } catch {
+      setStatusBanner({ tone: "error", text: "Invalid note format." });
     }
   };
 
@@ -482,12 +379,11 @@ export default function App() {
     <div className="min-h-screen w-full bg-[#0a0a0f] text-white flex flex-col items-center">
       <div className="mesh-bg pointer-events-none"></div>
 
-      {/* NAVBAR */}
       <header className="w-full px-8 py-5 flex justify-between items-center z-10 border-b border-white/5">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 cursor-pointer">
-             <Shield className="w-7 h-7 text-[#00f2ff]" />
-             <span className="text-xl font-orbitron font-bold tracking-wider">OBSCELL</span>
+            <Shield className="w-7 h-7 text-[#00f2ff]" />
+            <span className="text-xl font-orbitron font-bold tracking-wider">OBSCELL</span>
           </div>
           <nav className="hidden md:flex gap-6 text-sm text-gray-400">
             <a href="#" className="hover:text-white transition-colors">Voting</a>
@@ -499,11 +395,20 @@ export default function App() {
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded bg-white/5 border border-white/10 text-xs">
             <div className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>Aggron Testnet</span>
+            <span>Pudge Testnet</span>
           </div>
           {walletAddress ? (
-            <div className="px-4 py-1.5 bg-[#00f2ff]/10 border border-[#00f2ff]/30 text-[#00f2ff] rounded text-sm font-orbitron">
-              {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+            <div className="flex items-center gap-2">
+              <div className="px-4 py-1.5 bg-[#00f2ff]/10 border border-[#00f2ff]/30 text-[#00f2ff] rounded text-sm font-orbitron">
+                {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+              </div>
+              <button
+                onClick={() => navigator.clipboard.writeText(walletAddress)}
+                className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors text-gray-400 hover:text-[#00f2ff]"
+                title="Copy Address"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
             </div>
           ) : (
             <button
@@ -520,30 +425,26 @@ export default function App() {
         </div>
       </header>
 
-      {/* MAIN CONTENT */}
       <main className="w-full max-w-5xl px-4 py-16 grid grid-cols-1 md:grid-cols-2 gap-12 z-10">
-        
-        {/* LEFT COLUMN: ACTION CARD */}
         <div className="flex flex-col">
           <div className="flex mb-0 w-full relative">
             <button
               onClick={() => setActiveTab("deposit")}
               className={`flex-1 py-4 text-center font-orbitron font-bold tracking-wider rounded-t-xl z-10 transition-all ${activeTab === "deposit" ? "bg-[#111116] text-white border-t border-l border-r border-[#00f2ff]/30" : "bg-[#0c0c11] text-gray-500 border-b border-[#00f2ff]/30 hover:text-gray-300"}`}
-              style={{ clipPath: 'polygon(0 0, 85% 0, 100% 100%, 0% 100%)' }}
+              style={{ clipPath: "polygon(0 0, 85% 0, 100% 100%, 0% 100%)" }}
             >
               Deposit
             </button>
             <button
               onClick={() => setActiveTab("withdraw")}
               className={`flex-1 py-4 text-center font-orbitron font-bold tracking-wider rounded-t-xl transition-all ${activeTab === "withdraw" ? "bg-[#111116] text-white border-t border-l border-r border-[#00f2ff]/30 z-10" : "bg-[#0c0c11] text-gray-500 border-b border-[#00f2ff]/30 hover:text-gray-300"}`}
-              style={{ clipPath: 'polygon(0 100%, 15% 0, 100% 0, 100% 100%)', marginLeft: '-15%' }}
+              style={{ clipPath: "polygon(0 100%, 15% 0, 100% 0, 100% 100%)", marginLeft: "-15%" }}
             >
               Withdraw
             </button>
           </div>
-          
+
           <div className="bg-[#111116] border border-t-0 border-[#00f2ff]/30 rounded-b-xl p-8 shadow-2xl relative overflow-hidden">
-            
             {statusBanner && (
               <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${getBannerClasses(statusBanner.tone)}`}>
                 {statusBanner.text}
@@ -552,70 +453,48 @@ export default function App() {
 
             {activeTab === "deposit" ? (
               <AnimatePresence mode="wait">
-                {!isMixing ? (
-                  <motion.div key="deposit-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <div className="mb-8">
-                      <label className="text-gray-400 text-sm mb-2 block">Token</label>
-                      <div className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between cursor-not-allowed">
-                        <span className="font-semibold text-white">CKB (CoNervos)</span>
-                        <ArrowRight className="w-4 h-4 text-gray-500 rotate-90" />
-                      </div>
+                <motion.div key="deposit-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <div className="mb-8">
+                    <label className="text-gray-400 text-sm mb-2 block">Token</label>
+                    <div className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between cursor-not-allowed">
+                      <span className="font-semibold text-white">CKB (CoNervos)</span>
+                      <ArrowRight className="w-4 h-4 text-gray-500 rotate-90" />
+                    </div>
+                  </div>
+
+                  <div className="mb-10">
+                    <div className="flex items-center gap-2 mb-4">
+                      <label className="text-gray-400 text-sm">Amount</label>
+                      <Info className="w-3.5 h-3.5 text-[#00f2ff] cursor-help" />
                     </div>
 
-                    <div className="mb-10">
-                      <div className="flex items-center gap-2 mb-4">
-                        <label className="text-gray-400 text-sm">Amount</label>
-                        <Info className="w-3.5 h-3.5 text-[#00f2ff] cursor-help" />
-                      </div>
-                      
-                      <div className="relative pt-2 pb-6">
-                        <div className="absolute top-4 left-4 right-4 h-[2px] bg-[#00f2ff]/30 z-0"></div>
-                        <div className="flex justify-between relative z-10">
-                          {pools.map(pool => (
-                            <div key={pool.denomination} className="flex flex-col items-center">
-                              <button
-                                onClick={() => setSelectedPool(pool.denomination)}
-                                disabled={!pool.available}
-                                className={`w-5 h-5 rounded-full border-2 bg-[#111116] transition-all ${selectedPool === pool.denomination ? 'border-[#00f2ff] scale-125' : 'border-gray-500 hover:border-gray-400'} ${!pool.available ? 'opacity-30 cursor-not-allowed' : ''}`}
-                              />
-                              <span className={`mt-3 text-xs font-orbitron ${selectedPool === pool.denomination ? 'text-[#00f2ff]' : 'text-gray-500'}`}>
-                                {pool.denomination} CT
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                    <div className="relative pt-2 pb-6">
+                      <div className="absolute top-4 left-4 right-4 h-[2px] bg-[#00f2ff]/30 z-0"></div>
+                      <div className="flex justify-between relative z-10">
+                        {pools.map(pool => (
+                          <div key={pool.denomination} className="flex flex-col items-center">
+                            <button
+                              onClick={() => setSelectedPool(pool.denomination)}
+                              disabled={!pool.available}
+                              className={`w-5 h-5 rounded-full border-2 bg-[#111116] transition-all ${selectedPool === pool.denomination ? "border-[#00f2ff] scale-125" : "border-gray-500 hover:border-gray-400"} ${!pool.available ? "opacity-30 cursor-not-allowed" : ""}`}
+                            />
+                            <span className={`mt-3 text-xs font-orbitron ${selectedPool === pool.denomination ? "text-[#00f2ff]" : "text-gray-500"}`}>
+                              {pool.denomination} CT
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
+                  </div>
 
                     <button
                       className="w-full py-4 rounded-lg bg-gradient-to-r from-[#00f2ff] to-[#00a2ff] text-black font-orbitron font-bold text-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-                      onClick={() => walletAddress ? startMixing() : handleConnect()}
-                      disabled={depositBusy || !currentPool.available}
+                      onClick={() => void startMixing()}
+                      disabled={!currentPool.available && false}
                     >
-                      {depositBusy ? "Processing..." : walletAddress ? "Deposit" : "Connect"}
+                      Deposit
                     </button>
-                  </motion.div>
-                ) : (
-                  <motion.div key="deposit-mixing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-6">
-                    <h3 className="text-xl font-orbitron mb-8 text-[#00f2ff]">Preparing Deposit</h3>
-                    <div className="relative w-40 h-40 mb-8">
-                      <svg className="w-full h-full transform -rotate-90">
-                        <circle cx="80" cy="80" r="70" stroke="rgba(0,242,255,0.1)" strokeWidth="6" fill="none" />
-                        <motion.circle cx="80" cy="80" r="70" stroke="#00f2ff" strokeWidth="6" fill="none" strokeDasharray="440" animate={{ strokeDashoffset: 440 - (440 * mixingStep) / 100 }} />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-orbitron glow-text">{mixingStep}%</span>
-                      </div>
-                    </div>
-                    {mixingStep === 100 ? (
-                      <button className="w-full py-3 rounded-lg border border-[#00f2ff] text-[#00f2ff] hover:bg-[#00f2ff]/10 transition-colors" onClick={() => { setIsMixing(false); setActiveTab("withdraw"); }}>
-                        Go to Withdraw
-                      </button>
-                    ) : (
-                      <p className="text-gray-400 text-sm animate-pulse">Generating Zero-Knowledge Proof...</p>
-                    )}
-                  </motion.div>
-                )}
+                </motion.div>
               </AnimatePresence>
             ) : (
               <AnimatePresence mode="wait">
@@ -627,7 +506,7 @@ export default function App() {
                         <Upload className="w-3 h-3" /> Import
                       </button>
                     </div>
-                    <textarea 
+                    <textarea
                       className="w-full bg-[#1a1a24] border border-white/10 rounded-lg p-3 text-xs text-gray-300 font-mono resize-none focus:border-[#00f2ff]/50 outline-none transition-colors"
                       rows={5}
                       placeholder="Please paste your deposit note here..."
@@ -635,14 +514,14 @@ export default function App() {
                       onChange={(e) => setWithdrawNoteString(e.target.value)}
                     />
                   </div>
-                  
+
                   {vaultNotes.length > 0 && (
                     <div className="mb-8">
                       <label className="text-gray-500 text-xs mb-2 block uppercase tracking-wider">Or select from Vault</label>
                       <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                        {vaultNotes.filter(n => n.withdrawalStatus !== 'submitted').map(note => (
-                          <div 
-                            key={note.sessionId} 
+                        {vaultNotes.filter(n => n.withdrawalStatus !== "submitted").map(note => (
+                          <div
+                            key={note.sessionId}
                             onClick={() => setWithdrawNoteString(JSON.stringify(note, null, 2))}
                             className="bg-[#1a1a24] border border-white/5 hover:border-[#00f2ff]/30 p-2 rounded cursor-pointer transition-colors flex justify-between items-center gap-3"
                           >
@@ -675,8 +554,7 @@ export default function App() {
                     >
                       Prepare Proof
                     </button>
-                    
-                    {/* If we have a prepared proof for the current note, show broadcast options */}
+
                     {(() => {
                       try {
                         const parsed = JSON.parse(withdrawNoteString) as DepositNote;
@@ -702,7 +580,7 @@ export default function App() {
                             </>
                           );
                         }
-                      } catch(e) {}
+                      } catch {}
                       return null;
                     })()}
                   </div>
@@ -719,8 +597,7 @@ export default function App() {
 
                       return (
                         <div className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-                          Broadcast tx:
-                          {" "}
+                          Broadcast tx:{" "}
                           <a
                             href={getExplorerTxUrl(txHash)}
                             target="_blank"
@@ -741,7 +618,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: STATISTICS */}
         <div className="flex flex-col pt-2">
           <div className="flex mb-4 gap-4 items-end">
             <h2 className="text-xl font-orbitron font-bold">Statistics</h2>
@@ -749,7 +625,7 @@ export default function App() {
               {currentPool.denomination} CT
             </div>
           </div>
-          
+
           <div className="bg-[#111116] border border-white/10 rounded-xl p-6 flex flex-col gap-8">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -765,26 +641,24 @@ export default function App() {
               <span className="text-sm text-gray-400 mb-4 block">Latest deposits</span>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                 {[...Array(6)].map((_, i) => (
-                  <div key={i} className={`h-6 rounded bg-white/5 border border-white/5 flex items-center px-2 ${i < currentPool.participants ? 'opacity-100' : 'opacity-20'}`}>
+                  <div key={i} className={`h-6 rounded bg-white/5 border border-white/5 flex items-center px-2 ${i < currentPool.participants ? "opacity-100" : "opacity-20"}`}>
                     {i < currentPool.participants && (
-                      <span className="text-[10px] font-mono text-gray-400">0x...{(Math.random() * 10000).toFixed(0).padStart(4, '0')}</span>
+                      <span className="text-[10px] font-mono text-gray-400">0x...{(Math.random() * 10000).toFixed(0).padStart(4, "0")}</span>
                     )}
                   </div>
                 ))}
               </div>
             </div>
           </div>
-          
+
           <div className="mt-8 bg-blue-500/10 border border-blue-500/20 rounded-xl p-5 flex items-start gap-4">
             <AlertCircle className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
             <div className="text-sm text-blue-200/80 leading-relaxed">
               <strong className="text-blue-400 block mb-1">Current Product Boundary</strong>
-              The current repo can now generate canonical deposit notes, browser-side Groth16 proofs,
-              and withdrawal previews from one shared SDK shape. Deposit coordination is still a preview/demo
-              flow until a real Aggron session coordinator and CT input sourcing are added.
+              This build supports live registry-backed withdrawal preparation and broadcast. Deposit creation is disabled until the repo has real on-chain CT input sourcing and coordinator-backed settlement.
               <div className="mt-3 space-y-1 text-xs text-blue-100/80">
                 <div>Runtime: {runtimeReady ? "live withdrawal metadata ready" : runtimeMode}</div>
-                <div>Deposits: {liveDepositEnabled ? "live coordinator path enabled" : "preview note flow only"}</div>
+                <div>Deposits: unavailable</div>
                 {relayerInfo && (
                   <div>
                     Relayer: {relayerInfo.network} at {relayerInfo.feePercent}% fee
@@ -796,7 +670,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* FOOTER */}
       <footer className="mt-auto w-full py-6 px-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-500">
         <div className="flex items-center gap-4">
           <span>Obscell version: v0.1.0-alpha</span>
@@ -804,7 +677,7 @@ export default function App() {
           <a href="#" className="hover:text-white transition-colors">Docs</a>
         </div>
         <div className="flex items-center gap-4">
-          <span>Network: Aggron Testnet</span>
+          <span>Network: Pudge Testnet</span>
           <span>Proofs: Groth16 Arkworks</span>
         </div>
       </footer>

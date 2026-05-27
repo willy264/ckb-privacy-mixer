@@ -17,7 +17,7 @@ export interface RegistryReference {
     typeArgs?: string;
 }
 
-export type RuntimeMode = 'disabled' | 'preview' | 'live';
+export type RuntimeMode = 'disabled' | 'live';
 export type WithdrawalAuthorityMode = 'operator-registry-lock' | 'self-custodied' | 'coordinator';
 
 export interface MixerRuntimeConfig {

@@ -10,5 +10,11 @@
     "build:sdk": "pnpm --filter mixer-sdk build",
     "preview": "pnpm --filter frontend preview",
     "test:contracts": "cargo test --locked -p tests -j 1"
+  },
+  "dependencies": {
+    "@ckb-lumos/base": "^0.22.2",
+    "@ckb-lumos/helpers": "^0.23.0",
+    "@ckb-lumos/lumos": "^0.23.0",
+    "dotenv": "^16.6.1"
   }
 }

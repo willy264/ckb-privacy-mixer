@@ -852,6 +852,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ct-mint-helper"
+version = "0.1.0"
+dependencies = [
+ "bulletproofs",
+ "curve25519-dalek",
+ "merlin",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cty"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

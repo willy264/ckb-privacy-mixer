@@ -392,6 +392,14 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             };
         }
 
+        if (trimmed === 'always_success') {
+            return {
+                codeHash: '0x28e83a1277d48add8e72fadaa9248559e1b632bab2bd60b27955ebc4c03800a5', // Testnet always_success
+                hashType: 'type',
+                args: '0x',
+            };
+        }
+
         throw new Error(`Unable to resolve lock script from value: ${lock}`);
     }
 

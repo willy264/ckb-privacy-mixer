@@ -1,25 +1,16 @@
 import crypto from 'crypto';
-import { RPC, helpers, config as lumosConfig } from '@ckb-lumos/lumos';
+import { RPC, helpers, config as lumosConfig, Indexer } from '@ckb-lumos/lumos';
+import { blockchain } from '@ckb-lumos/base';
+import type { Cell } from '@ckb-lumos/lumos';
 import type { MixPool } from './pool.js';
 import { pools } from './pool.js';
 import { logger } from '../utils/logger.js';
 
 lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
 
-/**
- * CoinJoin transaction assembly.
- *
- * Security model:
- *   - The Coordinator builds the transaction from PUBLIC data only
- *     (commitments + stealth output addresses).
- *   - The Coordinator NEVER sees private keys or blinding factors.
- *   - Outputs are SHUFFLED with a CSPRNG so the coordinator cannot
- *     determine which input maps to which output.
- *   - Each participant signs only their own input; the coordinator
- *     assembles all partial signatures into the final transaction.
- *   - If fewer than `requiredParticipants` sign within the timeout,
- *     the session is aborted and participants' funds are never locked.
- */
+const CKB_SHANNON = BigInt(1_0000_0000); // 1 CKB = 10^8 shannons
+const MIN_CELL_CAPACITY = BigInt(61) * CKB_SHANNON; // ~61 CKB minimum for a cell
+const TX_FEE = BigInt(100_000); // 0.001 CKB flat fee
 
 /** Fischer-Yates shuffle using CSPRNG. */
 function secureShuffleArray<T>(arr: T[]): T[] {
@@ -32,15 +23,40 @@ function secureShuffleArray<T>(arr: T[]): T[] {
 }
 
 /**
- * Build the unsigned CoinJoin transaction for a full pool.
- *
- * Inputs  = all participants' deposit cells (in original order).
- * Outputs = all participants' stealth output addresses (shuffled).
- *
- * After building, the pool moves to 'building' status and the
- * pending tx hex is broadcast over WebSocket to all participants.
+ * Parse a CKB address into its lock script.
+ * Handles both short-format (ckt1qzda...) and full-format (ckt1qr.../JoyID) addresses.
  */
-export function buildCoinJoinTransaction(pool: MixPool): string {
+function parseLockScript(address: string) {
+    try {
+        return helpers.parseAddress(address, { config: lumosConfig.getConfig() });
+    } catch {
+        return helpers.parseAddress(address);
+    }
+}
+
+/**
+ * Collect live cells from the indexer for a given lock script.
+ * Returns cells whose total capacity >= `needed`.
+ */
+async function collectCells(
+    indexer: Indexer,
+    lock: ReturnType<typeof parseLockScript>,
+    needed: bigint,
+): Promise<{ cells: Cell[]; total: bigint }> {
+    const collector = indexer.collector({ lock });
+    const cells: Cell[] = [];
+    let total = 0n;
+
+    for await (const cell of collector.collect()) {
+        cells.push(cell);
+        total += BigInt(cell.cellOutput.capacity);
+        if (total >= needed) break;
+    }
+
+    return { cells, total };
+}
+
+export async function buildCoinJoinTransaction(pool: MixPool): Promise<string> {
     if (pool.participants.length < pool.requiredParticipants) {
         throw new Error('Pool is not full yet');
     }
@@ -48,40 +64,111 @@ export function buildCoinJoinTransaction(pool: MixPool): string {
         throw new Error(`Cannot build transaction for pool in state: ${pool.status}`);
     }
 
-    // Shuffle outputs so input→output mapping is hidden even from the coordinator
-    const shuffledOutputAddresses = secureShuffle(
-        pool.participants.map(p => p.stealthOutputAddress),
-    );
+    const rpcUrl = process.env.CKB_RPC_URL!;
+    const indexer = new Indexer(rpcUrl);
 
-    // Build a CKB-compatible raw transaction skeleton
-    const rawTx = {
-        version: '0x0',
-        inputs: pool.participants.map(p => {
-            // parse outPoint assuming format "0xhash_0xindex" or fallback if different
-            const parts = p.outPoint.split('_');
-            const txHash = parts[0] || p.outPoint;
-            const index = parts[1] || '0x0';
-            return {
-                previousOutput: {
-                    txHash,
-                    index,
+    // The denomination from the frontend is in CKB units (e.g. 100 = 100 CKB).
+    // Convert to shannons for on-chain capacity.
+    const denominationShannons = pool.denomination * CKB_SHANNON;
+
+    // Each stealth output needs at least MIN_CELL_CAPACITY to be valid on-chain.
+    const outputCapacity = denominationShannons > MIN_CELL_CAPACITY
+        ? denominationShannons
+        : MIN_CELL_CAPACITY;
+
+    // ── Use Lumos TransactionSkeleton so createTransactionFromSkeleton ──
+    // ── produces the exact format JoyID expects                        ──
+    let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
+
+    // ── Add stealth outputs (shuffled to break input→output link) ────────
+    const shuffledParticipants = secureShuffleArray(pool.participants);
+
+    for (const p of shuffledParticipants) {
+        const stealthLock = {
+            codeHash: process.env.STEALTH_LOCK_CODE_HASH!,
+            hashType: process.env.STEALTH_LOCK_HASH_TYPE! as 'type' | 'data' | 'data1',
+            args: p.stealthOutputAddress,
+        };
+        txSkeleton = txSkeleton.update('outputs', (outputs) =>
+            outputs.push({
+                cellOutput: {
+                    capacity: `0x${outputCapacity.toString(16)}`,
+                    lock: stealthLock,
                 },
-                since: '0x0',
-            };
-        }),
-        outputs: shuffledOutputAddresses.map(addr => {
-            const lock = helpers.parseAddress(addr, { config: lumosConfig.predefined.AGGRON4 });
-            return {
-                lock,
-                capacity: `0x${pool.denomination.toString(16)}`,
-            };
-        }),
-        outputsData: shuffledOutputAddresses.map(() => '0x'),
-        cellDeps: [],
-        headerDeps: [],
-        witnesses: pool.participants.map(() => '0x'), // filled in during signing
-    };
+                data: '0x',
+            })
+        );
+    }
 
+    // ── Collect input cells for each participant (manual — bypasses lock registration) ──
+    for (const p of pool.participants) {
+        const lock = parseLockScript(p.walletAddress);
+        const needed = outputCapacity + TX_FEE;
+        const { cells, total } = await collectCells(indexer, lock, needed);
+
+        if (cells.length === 0) {
+            throw new Error(
+                `No live cells found for participant ${p.participantId}. ` +
+                `Wallet: ${p.walletAddress.slice(0, 12)}...  Ensure the address has CKB on Pudge testnet.`,
+            );
+        }
+
+        if (total < needed) {
+            const haveCkb = (Number(total) / 1e8).toFixed(4);
+            const needCkb = (Number(needed) / 1e8).toFixed(4);
+            throw new Error(
+                `Participant ${p.participantId} has ${haveCkb} CKB but ${needCkb} CKB is required.`,
+            );
+        }
+
+        // Add each collected cell as an input
+        for (const cell of cells) {
+            txSkeleton = txSkeleton.update('inputs', (inputs) => inputs.push(cell));
+        }
+
+        // Return change to the participant's own lock
+        const change = total - needed;
+        if (change >= MIN_CELL_CAPACITY) {
+            txSkeleton = txSkeleton.update('outputs', (outputs) =>
+                outputs.push({
+                    cellOutput: {
+                        capacity: `0x${change.toString(16)}`,
+                        lock,
+                    },
+                    data: '0x',
+                })
+            );
+        }
+    }
+
+    // ── Add cell deps ────────────────────────────────────────────────────
+    if (process.env.STEALTH_LOCK_TX_HASH) {
+        txSkeleton = txSkeleton.update('cellDeps', (cellDeps) =>
+            cellDeps.push({
+                outPoint: {
+                    txHash: process.env.STEALTH_LOCK_TX_HASH!,
+                    index: process.env.STEALTH_LOCK_INDEX ?? '0x0',
+                },
+                depType: 'code',
+            })
+        );
+    }
+
+    // ── Add empty witnesses (one per input — participants fill in their own) ──
+    const emptyWitness = `0x${Buffer.from(
+        blockchain.WitnessArgs.pack({
+            lock: undefined,
+            inputType: undefined,
+            outputType: undefined,
+        })
+    ).toString('hex')}`;
+    const inputCount = txSkeleton.get('inputs').size;
+    for (let i = 0; i < inputCount; i++) {
+        txSkeleton = txSkeleton.update('witnesses', (witnesses) => witnesses.push(emptyWitness));
+    }
+
+    // ── Serialize using Lumos (ensures correct molecule-compatible format) ──
+    const rawTx = helpers.createTransactionFromSkeleton(txSkeleton);
     const txHex = `0x${Buffer.from(JSON.stringify(rawTx)).toString('hex')}`;
 
     pool.status = 'building';
@@ -91,17 +178,13 @@ export function buildCoinJoinTransaction(pool: MixPool): string {
         poolId: pool.poolId,
         inputs: rawTx.inputs.length,
         outputs: rawTx.outputs.length,
+        denominationCKB: pool.denomination.toString(),
+        outputCapacityShannons: outputCapacity.toString(),
     });
 
     return txHex;
 }
 
-/**
- * Record a participant's signature on the pending CoinJoin transaction.
- *
- * When ALL participants have signed, the pool transitions to 'broadcasting'
- * and this function returns true, signalling the coordinator to broadcast.
- */
 export function recordSignature(
     poolId: string,
     participantId: string,
@@ -134,15 +217,10 @@ export function recordSignature(
     return allSigned;
 }
 
-/**
- * Broadcast the fully-signed CoinJoin transaction to the CKB network.
- * In production this calls rpc.sendTransaction().
- */
 export async function broadcastCoinJoin(pool: MixPool, rpcUrl: string): Promise<string> {
     if (pool.status !== 'broadcasting') {
         throw new Error('Pool is not ready to broadcast');
     }
-
     if (!pool.pendingTxHex) {
         throw new Error('No pending transaction to broadcast');
     }
@@ -150,8 +228,39 @@ export async function broadcastCoinJoin(pool: MixPool, rpcUrl: string): Promise<
     const rawTxStr = Buffer.from(pool.pendingTxHex.slice(2), 'hex').toString('utf8');
     const tx = JSON.parse(rawTxStr);
 
-    // Inject signatures into witnesses in the same order as participants
-    tx.witnesses = pool.participants.map(p => p.signature || '0x');
+    // Merge witnesses and cellDeps from all participants
+    const mergedWitnesses = [...tx.witnesses];
+    const mergedCellDeps = tx.cellDeps ? [...tx.cellDeps] : [];
+    
+    for (const p of pool.participants) {
+        if (!p.signature) continue;
+        try {
+            const parsed = JSON.parse(p.signature);
+            const parsedWitnesses = Array.isArray(parsed) ? parsed : (parsed.witnesses || []);
+            const parsedCellDeps = Array.isArray(parsed) ? [] : (parsed.cellDeps || []);
+
+            for (let i = 0; i < parsedWitnesses.length; i++) {
+                if (parsedWitnesses[i] && parsedWitnesses[i] !== '0x') {
+                    mergedWitnesses[i] = parsedWitnesses[i];
+                }
+            }
+
+            for (const dep of parsedCellDeps) {
+                const exists = mergedCellDeps.some((d: any) => 
+                    d.outPoint.txHash === dep.outPoint.txHash && 
+                    d.outPoint.index === dep.outPoint.index
+                );
+                if (!exists) {
+                    mergedCellDeps.push(dep);
+                }
+            }
+        } catch (e) {
+            logger.warn('Failed to parse participant signature as JSON', { err: e });
+        }
+    }
+    
+    tx.witnesses = mergedWitnesses;
+    tx.cellDeps = mergedCellDeps;
 
     logger.info('[CoinJoin] Sending transaction to CKB node...', { poolId: pool.poolId });
 
@@ -170,13 +279,4 @@ export async function broadcastCoinJoin(pool: MixPool, rpcUrl: string): Promise<
         logger.error('[CoinJoin] Broadcast failed', { poolId: pool.poolId, error: pool.failureReason });
         throw error;
     }
-}
-
-function secureShuffle<T>(arr: T[]): T[] {
-    const shuffled = [...arr];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = crypto.randomInt(0, i + 1);
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
 }

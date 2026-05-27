@@ -1,3 +1,4 @@
+import '../env.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { loadRelayerConfig } from './config.js';
@@ -41,8 +42,8 @@ export function createRelayerApp() {
     app.post('/relay', async (req: Request, res: Response, next: NextFunction) => {
         try {
             const body = req.body as RelayRequest;
-            if (!body.proofHex || !body.recipientAddress || !body.nullifierHex) {
-                res.status(400).json({ error: 'Missing required fields: proofHex, recipientAddress, nullifierHex' });
+            if (!body.nullifierHex || !body.transaction) {
+                res.status(400).json({ error: 'Missing required fields: nullifierHex, transaction' });
                 return;
             }
 
