@@ -120,7 +120,7 @@ export function ensureJoyIdCellDep(transaction: CkbTransaction): CkbTransaction 
     depType: joyIdDep.depType,
   };
 
-  const exists = transaction.cellDeps.some(dep =>
+  const exists = transaction.cellDeps.some((dep: CkbCellDep) =>
     dep.outPoint.txHash === mappedDep.outPoint.txHash &&
     dep.outPoint.index === mappedDep.outPoint.index &&
     dep.depType === mappedDep.depType,
