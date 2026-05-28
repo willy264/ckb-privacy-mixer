@@ -158,7 +158,10 @@ async function pruneExpiredDepositPools() {
             }
 
             const pool = JSON.parse(raw) as DepositPool;
-            if (pool.status === 'complete' || pool.status === 'failed' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+            const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
+            const invalidOpenPool = pool.status === 'open' && activeCount > pool.targetParticipants;
+            const staleRound = (pool.status === 'ready' || pool.status === 'finalizing') && timestamp - pool.updatedAt > 10 * 60 * 1000;
+            if (pool.status === 'complete' || pool.status === 'failed' || invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
                 await deletePool(pool.poolId, pool.denomination);
                 logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
             }
@@ -169,7 +172,10 @@ async function pruneExpiredDepositPools() {
     const state = readFileState();
     let changed = false;
     for (const pool of Object.values(state.pools)) {
-        if (pool.status === 'complete' || pool.status === 'failed' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+        const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
+        const invalidOpenPool = pool.status === 'open' && activeCount > pool.targetParticipants;
+        const staleRound = (pool.status === 'ready' || pool.status === 'finalizing') && timestamp - pool.updatedAt > 10 * 60 * 1000;
+        if (pool.status === 'complete' || pool.status === 'failed' || invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
             delete state.pools[pool.poolId];
             changed = true;
             logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
