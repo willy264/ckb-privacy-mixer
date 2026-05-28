@@ -31,7 +31,10 @@ function buildStealthLockScript(args: string) {
 
 function assertReadyParticipants(pool: DepositPool) {
     const participants = pool.participants.filter(
-        participant => participant.status === 'minted' && participant.inputOutPoint && participant.stealthOutputAddress,
+        participant =>
+            (participant.status === 'minted' || participant.status === 'registered' || participant.status === 'finalized') &&
+            participant.inputOutPoint &&
+            participant.stealthOutputAddress,
     );
     if (participants.length < pool.targetParticipants) {
         throw new Error(`Deposit pool ${pool.poolId} is not ready for finalization`);
