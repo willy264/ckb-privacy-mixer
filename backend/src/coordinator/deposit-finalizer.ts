@@ -8,6 +8,8 @@ import { logger } from '../utils/logger.js';
 
 const CKB_SHANNON = 100_000_000n;
 const MIXED_OUTPUT_CAPACITY = 224n * CKB_SHANNON;
+const STAGING_OUTPUT_CAPACITY = 300n * CKB_SHANNON;
+const CHANGE_OUTPUT_CAPACITY = STAGING_OUTPUT_CAPACITY - MIXED_OUTPUT_CAPACITY;
 const execFileAsync = promisify(execFile);
 
 interface RoundHelperOutput {
@@ -81,7 +83,19 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
 
     const outputIndexByParticipantId: Record<string, number> = {};
     shuffled.forEach((participant, index) => {
-        outputIndexByParticipantId[participant.participantId] = index;
+        txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
+            outputs.push({
+                cellOutput: {
+                    capacity: `0x${CHANGE_OUTPUT_CAPACITY.toString(16)}`,
+                    lock: helpers.parseAddress(participant.walletAddress, { config: lumosConfig.getConfig() }),
+                },
+                data: '0x',
+            } as any),
+        );
+    });
+
+    shuffled.forEach((participant, index) => {
+        outputIndexByParticipantId[participant.participantId] = shuffled.length + index;
         const commitmentHex = roundHelper.outputs[index]?.commitment_hex;
         if (!commitmentHex) {
             throw new Error(`Missing generated round commitment for output ${index}`);
@@ -126,6 +140,9 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
 
     for (let i = 0; i < participants.length; i += 1) {
         txSkeleton = txSkeleton.update('witnesses', (witnesses: any) => witnesses.push(inputWitnessPlaceholder));
+    }
+    for (let i = 0; i < shuffled.length; i += 1) {
+        txSkeleton = txSkeleton.update('witnesses', (witnesses: any) => witnesses.push('0x'));
     }
     txSkeleton = txSkeleton.update('witnesses', (witnesses: any) => witnesses.push(ctTokenWitness));
 

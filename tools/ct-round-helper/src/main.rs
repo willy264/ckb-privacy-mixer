@@ -56,7 +56,14 @@ fn main() {
     let mut rng = OsRng;
 
     let values = vec![amount; count];
-    let blindings: Vec<Scalar> = (0..count).map(|_| Scalar::random(&mut rng)).collect();
+    let mut blindings: Vec<Scalar> = Vec::with_capacity(count);
+    let mut running_sum = Scalar::ZERO;
+    for _ in 0..count.saturating_sub(1) {
+        let blinding = Scalar::random(&mut rng);
+        running_sum += blinding;
+        blindings.push(blinding);
+    }
+    blindings.push(-running_sum);
     let commitments = values
         .iter()
         .zip(blindings.iter())

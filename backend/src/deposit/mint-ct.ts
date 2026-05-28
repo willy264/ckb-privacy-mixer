@@ -9,7 +9,7 @@ import { createCtInfoData, parseCtInfoData } from './obscell.js';
 
 const execFileAsync = promisify(execFile);
 const MINT_AMOUNT = 100n;
-const CT_TOKEN_OUTPUT_CAPACITY = 224n * 100_000_000n;
+const CT_TOKEN_OUTPUT_CAPACITY = 300n * 100_000_000n;
 const FEE_BUFFER = 200000n;
 
 interface MintHelperOutput {
