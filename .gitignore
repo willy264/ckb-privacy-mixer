@@ -52,6 +52,7 @@ MEMORY.md
 AGGRON_DEPLOYMENT.md
 PHASE4_ZK_PLAN.md
 CCC_MIGRATION_PLAN.md
+backend/data/
 
 # Zero-Knowledge Artifacts
 circuits/*.ptau
