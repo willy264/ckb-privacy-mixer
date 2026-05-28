@@ -347,6 +347,7 @@ export async function attachDepositParticipantSignature(poolId: string, particip
         throw new Error(`Deposit participant not found: ${participantId}`);
     }
 
+    participant.signaturePayload = signature;
     participant.signature = signature;
     participant.status = 'registered';
     pool.updatedAt = now();
