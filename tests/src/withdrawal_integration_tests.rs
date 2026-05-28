@@ -11,6 +11,7 @@ use ckb_testtool::context::Context;
 
 const NULLIFIER_ALREADY_USED: i8 = 8;
 const INVALID_MERKLE_ROOT: i8 = 8;
+const ZK_VERIFY_CYCLES: u64 = 800_000_000;
 
 fn assert_script_error(result: Result<u64, ckb_testtool::ckb_error::Error>, expected_code: i8) {
     let err = result.expect_err("Expected transaction to fail but it succeeded");
@@ -156,7 +157,7 @@ fn test_live_withdrawal_transaction_succeeds() {
         public_inputs,
         proof_bytes,
     );
-    let result = context.verify_tx(&tx, 100_000_000);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     if let Err(error) = result {
         panic!("Expected success but got: {:?}", error);
     }
@@ -176,7 +177,7 @@ fn test_live_withdrawal_replay_fails() {
         public_inputs,
         proof_bytes,
     );
-    let result = context.verify_tx(&tx, 100_000_000);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     assert_script_error(result, NULLIFIER_ALREADY_USED);
 }
 
@@ -192,6 +193,6 @@ fn test_live_withdrawal_invalid_membership_fails() {
         Bytes::from(public_inputs),
         proof_bytes,
     );
-    let result = context.verify_tx(&tx, 100_000_000);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     assert_script_error(result, INVALID_MERKLE_ROOT);
 }

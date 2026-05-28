@@ -2,7 +2,6 @@
 use ark_bn254::{Bn254, Fq, Fq2, G1Affine, G2Affine};
 use ark_ff::BigInteger256;
 use ark_groth16::VerifyingKey;
-use ark_ec::pairing::Pairing;
 
 pub fn get_vk() -> VerifyingKey<Bn254> {
     VerifyingKey {

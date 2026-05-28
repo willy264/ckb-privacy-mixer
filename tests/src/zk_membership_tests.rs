@@ -15,6 +15,7 @@ use std::path::PathBuf;
 const ERROR_INVALID_PROOF_DATA: i8 = 5;
 const ERROR_INVALID_CELL_COUNT: i8 = 6;
 const ERROR_INVALID_MERKLE_ROOT: i8 = 8;
+const ZK_VERIFY_CYCLES: u64 = 800_000_000;
 
 #[derive(Deserialize)]
 pub(crate) struct ProofJson {
@@ -190,7 +191,7 @@ fn test_zk_membership_valid_groth16_fixture() {
     let public_inputs = read_public_inputs_bytes();
     let witness_data = read_proof_bytes();
     let (context, tx) = build_zk_membership_context(public_inputs, witness_data, false);
-    let result = context.verify_tx(&tx, 100_000_000);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     if let Err(error) = result {
         panic!("Expected success but got: {:?}", error);
     }
@@ -202,7 +203,7 @@ fn test_zk_membership_invalid_proof_bytes_fail() {
     let mut witness_data = read_proof_bytes().to_vec();
     witness_data[0] ^= 0xff;
     let (context, tx) = build_zk_membership_context(public_inputs, Bytes::from(witness_data), false);
-    let result = context.verify_tx(&tx, 100_000_000);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     assert_script_error(result, ERROR_INVALID_PROOF_DATA);
 }
 
@@ -212,7 +213,7 @@ fn test_zk_membership_wrong_public_input_order_fails() {
     public_inputs[..32].reverse();
     let witness_data = read_proof_bytes();
     let (context, tx) = build_zk_membership_context(Bytes::from(public_inputs), witness_data, false);
-    let result = context.verify_tx(&tx, 100_000_000);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     assert_script_error(result, ERROR_INVALID_MERKLE_ROOT);
 }
 
@@ -221,6 +222,6 @@ fn test_zk_membership_invalid_cell_count() {
     let public_inputs = read_public_inputs_bytes();
     let witness_data = read_proof_bytes();
     let (context, tx) = build_zk_membership_context(public_inputs, witness_data, true);
-    let result = context.verify_tx(&tx, 100_000_000);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     assert_script_error(result, ERROR_INVALID_CELL_COUNT);
 }

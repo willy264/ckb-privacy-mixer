@@ -10,3 +10,8 @@ bulletproofs = { git = "https://github.com/zkcrypto/bulletproofs", rev = "04bce4
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ark-bn254 = "0.4"
+ark-ec = "0.4"
+ark-ff = "0.4"
+ark-groth16 = "0.4"
+ark-snark = "0.4"
