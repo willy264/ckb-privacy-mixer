@@ -60,6 +60,4 @@ circuits/*_000*.zkey
 circuits/*.r1cs
 circuits/*.sym
 circuits/input.json
-circuits/proof.json
-circuits/public.json
 scratch/

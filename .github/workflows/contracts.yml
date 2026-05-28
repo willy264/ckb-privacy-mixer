@@ -50,7 +50,6 @@ jobs:
 
       - name: Build RISC-V contracts
         run: >
-          RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort"
           cargo build -Z build-std=core,alloc --locked --release
           --target riscv64imac-unknown-none-elf
           -p mixer-pool-type -p nullifier-type -p zk-membership-type -j 1
