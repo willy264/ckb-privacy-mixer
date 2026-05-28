@@ -203,7 +203,10 @@ export async function createDepositPool(denomination: bigint, targetParticipants
 export async function findOrCreateDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
     await pruneExpiredDepositPools();
     const pools = await loadPoolsForDenomination(denomination.toString());
-    const open = pools.find(pool => pool.status === 'open');
+    const open = pools.find(pool =>
+        pool.status === 'open' &&
+        pool.participants.filter(entry => entry.status !== 'cancelled').length < pool.targetParticipants,
+    );
     if (open) {
         return open;
     }
@@ -216,6 +219,10 @@ export async function prepareDepositParticipant(
     stealthOutputAddress: string,
 ) {
     const pool = await findOrCreateDepositPool(denomination);
+    const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
+    if (activeCount >= pool.targetParticipants) {
+        throw new Error(`Deposit pool ${pool.poolId} is already full. Please retry against the next open pool.`);
+    }
     const participant: DepositPoolParticipant = {
         participantId: crypto.randomUUID(),
         walletAddress,
