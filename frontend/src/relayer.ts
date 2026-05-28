@@ -42,8 +42,12 @@ export interface DepositSessionSnapshot {
     commitments: string[];
     size: number;
     updatedAt: number;
-    status: 'open' | 'sealed';
+    participantCount: number;
+    pendingCount: number;
+    registeredCount: number;
+    status: 'open' | 'ready' | 'finalizing' | 'complete' | 'failed';
     targetSize: number;
+    finalizedAt?: number;
 }
 
 /** Read the relayer URL from Vite env, defaulting to localhost for dev. */

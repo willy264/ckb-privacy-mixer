@@ -58,7 +58,11 @@ async function hydrateSessionCommitments(note: DepositNote) {
       note.registrySnapshot = {
         ...(note.registrySnapshot ?? {}),
         size: remote.size,
+        authority: remote.status === 'complete' ? 'operator-registry-lock' : note.registrySnapshot?.authority,
       };
+      if (remote.finalizedAt) {
+        note.createdAt = Math.min(note.createdAt, remote.finalizedAt);
+      }
       return remote.commitments;
     }
   } catch {

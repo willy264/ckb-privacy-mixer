@@ -162,8 +162,11 @@ export default function App() {
         denomination: selectedPool,
         commitments: (result.note as DepositNote).sessionCommitments ?? [],
         size: (result.note as DepositNote).sessionCommitments?.length ?? 1,
+        participantCount: (result.note as DepositNote).sessionCommitments?.length ?? 1,
+        pendingCount: 0,
+        registeredCount: (result.note as DepositNote).sessionCommitments?.length ?? 1,
         updatedAt: Date.now(),
-        status: ((result.note as DepositNote).sessionCommitments?.length ?? 1) >= 5 ? "sealed" : "open",
+        status: ((result.note as DepositNote).sessionCommitments?.length ?? 1) >= 5 ? "complete" : "open",
         targetSize: 5,
       });
 
@@ -503,7 +506,12 @@ export default function App() {
                     </div>
                     {latestDepositPool && (
                       <div className="mt-3 text-xs text-sky-100/80">
-                        Current pool: {latestDepositPool.sessionId} ({latestDepositPool.size}/{latestDepositPool.targetSize}, {latestDepositPool.status})
+                        Current pool: {latestDepositPool.sessionId} ({latestDepositPool.size}/{latestDepositPool.targetSize}, status: {latestDepositPool.status})
+                      </div>
+                    )}
+                    {latestDepositPool && (
+                      <div className="mt-1 text-xs text-sky-100/70">
+                        Registered: {latestDepositPool.registeredCount} | Pending: {latestDepositPool.pendingCount}
                       </div>
                     )}
                   </div>
@@ -682,7 +690,7 @@ export default function App() {
                 <div>Deposits: live CT mint path enabled</div>
                 <div>Session model: backend-managed rotating deposit pools with shared commitment snapshots</div>
                 {latestDepositPool && (
-                  <div>Latest pool: {latestDepositPool.sessionId} ({latestDepositPool.size}/{latestDepositPool.targetSize}, {latestDepositPool.status})</div>
+                  <div>Latest pool: {latestDepositPool.sessionId} ({latestDepositPool.size}/{latestDepositPool.targetSize}, {latestDepositPool.status}, pending {latestDepositPool.pendingCount})</div>
                 )}
                 {relayerInfo && (
                   <div>

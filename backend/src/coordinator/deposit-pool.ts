@@ -5,7 +5,7 @@ import { logger } from '../utils/logger.js';
 import { redis } from '../utils/redis.js';
 
 export type DepositParticipantStatus = 'pending' | 'registered' | 'cancelled';
-export type DepositPoolStatus = 'open' | 'sealed' | 'complete';
+export type DepositPoolStatus = 'open' | 'ready' | 'finalizing' | 'complete' | 'failed';
 
 export interface DepositPoolParticipant {
     participantId: string;
@@ -29,6 +29,9 @@ export interface DepositPool {
     status: DepositPoolStatus;
     createdAt: number;
     updatedAt: number;
+    finalizedCommitments?: string[];
+    finalizedAt?: number;
+    failureReason?: string;
 }
 
 const DEPOSIT_POOL_TIMEOUT_MS = 30 * 60 * 1000;
@@ -151,7 +154,7 @@ async function pruneExpiredDepositPools() {
             }
 
             const pool = JSON.parse(raw) as DepositPool;
-            if (pool.status === 'complete' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+            if (pool.status === 'complete' || pool.status === 'failed' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
                 await deletePool(pool.poolId, pool.denomination);
                 logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
             }
@@ -162,7 +165,7 @@ async function pruneExpiredDepositPools() {
     const state = readFileState();
     let changed = false;
     for (const pool of Object.values(state.pools)) {
-        if (pool.status === 'complete' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+        if (pool.status === 'complete' || pool.status === 'failed' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
             delete state.pools[pool.poolId];
             changed = true;
             logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
@@ -227,6 +230,48 @@ export async function prepareDepositParticipant(
     return { pool, participant };
 }
 
+function collectRegisteredCommitments(pool: DepositPool) {
+    return pool.participants
+        .filter(entry => entry.status === 'registered' && entry.commitment)
+        .map(entry => entry.commitment!);
+}
+
+async function finalizeDepositPool(pool: DepositPool) {
+    const commitments = collectRegisteredCommitments(pool);
+    if (commitments.length < pool.targetParticipants) {
+        return pool;
+    }
+
+    pool.status = 'ready';
+    pool.updatedAt = now();
+    await savePool(pool);
+
+    pool.status = 'finalizing';
+    pool.updatedAt = now();
+    await savePool(pool);
+
+    pool.finalizedCommitments = [...commitments];
+    pool.finalizedAt = now();
+    pool.status = 'complete';
+    pool.updatedAt = now();
+    await savePool(pool);
+
+    const successor = (await loadPoolsForDenomination(pool.denomination)).find(candidate =>
+        candidate.status === 'open' && candidate.poolId !== pool.poolId,
+    );
+    if (!successor) {
+        await createDepositPool(BigInt(pool.denomination), pool.targetParticipants);
+    }
+
+    logger.info('[DepositPool] Finalized', {
+        poolId: pool.poolId,
+        denomination: pool.denomination,
+        registeredCount: commitments.length,
+    });
+
+    return pool;
+}
+
 export async function registerDepositCommitment(
     poolId: string,
     participantId: string,
@@ -258,22 +303,14 @@ export async function registerDepositCommitment(
 
     const registeredCount = pool.participants.filter(entry => entry.status === 'registered').length;
     if (registeredCount >= pool.targetParticipants) {
-        pool.status = 'sealed';
-        const successor = (await loadPoolsForDenomination(pool.denomination)).find(candidate =>
-            candidate.status === 'open' && candidate.poolId !== pool.poolId,
-        );
-        if (!successor) {
-            await createDepositPool(BigInt(pool.denomination), pool.targetParticipants);
-        }
+        await finalizeDepositPool(pool);
+    } else {
+        await savePool(pool);
     }
-
-    await savePool(pool);
 
     return {
         poolId: pool.poolId,
-        commitments: pool.participants
-            .filter(entry => entry.status === 'registered' && entry.commitment)
-            .map(entry => entry.commitment!),
+        commitments: collectRegisteredCommitments(pool),
         leafIndex: pool.participants
             .filter(entry => entry.status === 'registered' && entry.commitment)
             .findIndex(commitmentEntry => commitmentEntry.participantId === participantId),
@@ -330,9 +367,7 @@ export async function getLatestDepositPool(denomination: bigint) {
 }
 
 export function summarizeDepositPool(pool: DepositPool) {
-    const commitments = pool.participants
-        .filter(entry => entry.status === 'registered' && entry.commitment)
-        .map(entry => entry.commitment!);
+    const commitments = pool.finalizedCommitments ?? collectRegisteredCommitments(pool);
     const pendingCount = pool.participants.filter(entry => entry.status === 'pending').length;
     const participantCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
 
@@ -347,5 +382,6 @@ export function summarizeDepositPool(pool: DepositPool) {
         updatedAt: pool.updatedAt,
         status: pool.status,
         targetSize: pool.targetParticipants,
+        finalizedAt: pool.finalizedAt,
     };
 }

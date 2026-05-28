@@ -9,8 +9,9 @@ export interface CoordinatorDepositPoolSummary {
     pendingCount: number;
     registeredCount: number;
     updatedAt: number;
-    status: 'open' | 'sealed' | 'complete';
+    status: 'open' | 'ready' | 'finalizing' | 'complete' | 'failed';
     targetSize: number;
+    finalizedAt?: number;
 }
 
 interface CoordinatorPreparedParticipant {
