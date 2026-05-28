@@ -1,5 +1,8 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { logger } from '../utils/logger.js';
+import { redis } from '../utils/redis.js';
 
 export type DepositParticipantStatus = 'pending' | 'registered' | 'cancelled';
 export type DepositPoolStatus = 'open' | 'sealed' | 'complete';
@@ -20,7 +23,7 @@ export interface DepositPoolParticipant {
 
 export interface DepositPool {
     poolId: string;
-    denomination: bigint;
+    denomination: string;
     targetParticipants: number;
     participants: DepositPoolParticipant[];
     status: DepositPoolStatus;
@@ -30,63 +33,192 @@ export interface DepositPool {
 
 const DEPOSIT_POOL_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_TARGET_PARTICIPANTS = Number.parseInt(process.env.DEPOSIT_POOL_TARGET_PARTICIPANTS ?? '5', 10);
+const POOL_KEY_PREFIX = 'deposit_pool:';
+const DENOMINATION_INDEX_PREFIX = 'deposit_pool_denominator:';
+const FILE_STORE_NAME = 'coordinator-deposit-pools.json';
 
-export const depositPools = new Map<string, DepositPool>();
+function now() {
+    return Date.now();
+}
 
-function pruneExpiredDepositPools() {
-    const now = Date.now();
-    for (const [poolId, pool] of depositPools) {
-        if (pool.status === 'complete' || now - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
-            depositPools.delete(poolId);
-            logger.info('[DepositPool] Pruned', { poolId, status: pool.status });
-        }
+function getPoolKey(poolId: string) {
+    return `${POOL_KEY_PREFIX}${poolId}`;
+}
+
+function getDenominationIndexKey(denomination: string) {
+    return `${DENOMINATION_INDEX_PREFIX}${denomination}`;
+}
+
+function getRepoRoot() {
+    const currentDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+    return path.resolve(currentDir, '..', '..', '..');
+}
+
+function getFileStorePath() {
+    return path.resolve(getRepoRoot(), 'backend', 'data', FILE_STORE_NAME);
+}
+
+function ensureFileStoreDir() {
+    fs.mkdirSync(path.dirname(getFileStorePath()), { recursive: true });
+}
+
+type FileBackedState = {
+    pools: Record<string, DepositPool>;
+};
+
+function readFileState(): FileBackedState {
+    const filePath = getFileStorePath();
+    if (!fs.existsSync(filePath)) {
+        return { pools: {} };
+    }
+
+    try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as Partial<FileBackedState>;
+        return {
+            pools: parsed.pools ?? {},
+        };
+    } catch {
+        return { pools: {} };
     }
 }
 
-export function createDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
-    const now = Date.now();
+function writeFileState(state: FileBackedState) {
+    ensureFileStoreDir();
+    fs.writeFileSync(getFileStorePath(), JSON.stringify(state, null, 2));
+}
+
+async function isRedisWritable() {
+    return redis.status === 'ready';
+}
+
+async function savePool(pool: DepositPool) {
+    if (await isRedisWritable()) {
+        await redis.set(getPoolKey(pool.poolId), JSON.stringify(pool));
+        await redis.sadd(getDenominationIndexKey(pool.denomination), pool.poolId);
+        return;
+    }
+
+    const state = readFileState();
+    state.pools[pool.poolId] = pool;
+    writeFileState(state);
+}
+
+async function loadPool(poolId: string): Promise<DepositPool | null> {
+    if (await isRedisWritable()) {
+        const raw = await redis.get(getPoolKey(poolId));
+        if (!raw) {
+            return null;
+        }
+
+        return JSON.parse(raw) as DepositPool;
+    }
+
+    const state = readFileState();
+    return state.pools[poolId] ?? null;
+}
+
+async function loadPoolsForDenomination(denomination: string) {
+    if (await isRedisWritable()) {
+        const ids = await redis.smembers(getDenominationIndexKey(denomination));
+        const pools = await Promise.all(ids.map(loadPool));
+        return pools.filter((pool): pool is DepositPool => pool !== null);
+    }
+
+    const state = readFileState();
+    return Object.values(state.pools).filter(pool => pool.denomination === denomination);
+}
+
+async function deletePool(poolId: string, denomination: string) {
+    if (await isRedisWritable()) {
+        await redis.del(getPoolKey(poolId));
+        await redis.srem(getDenominationIndexKey(denomination), poolId);
+        return;
+    }
+
+    const state = readFileState();
+    delete state.pools[poolId];
+    writeFileState(state);
+}
+
+async function pruneExpiredDepositPools() {
+    const timestamp = now();
+    if (await isRedisWritable()) {
+        const keys = await redis.keys(`${POOL_KEY_PREFIX}*`);
+        for (const key of keys) {
+            const raw = await redis.get(key);
+            if (!raw) {
+                continue;
+            }
+
+            const pool = JSON.parse(raw) as DepositPool;
+            if (pool.status === 'complete' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+                await deletePool(pool.poolId, pool.denomination);
+                logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
+            }
+        }
+        return;
+    }
+
+    const state = readFileState();
+    let changed = false;
+    for (const pool of Object.values(state.pools)) {
+        if (pool.status === 'complete' || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+            delete state.pools[pool.poolId];
+            changed = true;
+            logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
+        }
+    }
+    if (changed) {
+        writeFileState(state);
+    }
+}
+
+export async function createDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
+    const timestamp = now();
     const pool: DepositPool = {
         poolId: crypto.randomUUID(),
-        denomination,
+        denomination: denomination.toString(),
         targetParticipants,
         participants: [],
         status: 'open',
-        createdAt: now,
-        updatedAt: now,
+        createdAt: timestamp,
+        updatedAt: timestamp,
     };
-    depositPools.set(pool.poolId, pool);
+    await savePool(pool);
     logger.info('[DepositPool] Created', {
         poolId: pool.poolId,
-        denomination: denomination.toString(),
+        denomination: pool.denomination,
         targetParticipants,
     });
     return pool;
 }
 
-export function findOrCreateDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
-    pruneExpiredDepositPools();
-    const open = [...depositPools.values()].find(pool => pool.status === 'open' && pool.denomination === denomination);
+export async function findOrCreateDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
+    await pruneExpiredDepositPools();
+    const pools = await loadPoolsForDenomination(denomination.toString());
+    const open = pools.find(pool => pool.status === 'open');
     if (open) {
         return open;
     }
     return createDepositPool(denomination, targetParticipants);
 }
 
-export function prepareDepositParticipant(
+export async function prepareDepositParticipant(
     denomination: bigint,
     walletAddress: string,
     stealthOutputAddress: string,
 ) {
-    const pool = findOrCreateDepositPool(denomination);
+    const pool = await findOrCreateDepositPool(denomination);
     const participant: DepositPoolParticipant = {
         participantId: crypto.randomUUID(),
         walletAddress,
         stealthOutputAddress,
-        joinedAt: Date.now(),
+        joinedAt: now(),
         status: 'pending',
     };
     pool.participants.push(participant);
-    pool.updatedAt = Date.now();
+    pool.updatedAt = now();
+    await savePool(pool);
     logger.info('[DepositPool] Participant prepared', {
         poolId: pool.poolId,
         participantId: participant.participantId,
@@ -95,7 +227,7 @@ export function prepareDepositParticipant(
     return { pool, participant };
 }
 
-export function registerDepositCommitment(
+export async function registerDepositCommitment(
     poolId: string,
     participantId: string,
     data: {
@@ -106,7 +238,7 @@ export function registerDepositCommitment(
         noteCreatedAt: number;
     },
 ) {
-    const pool = depositPools.get(poolId);
+    const pool = await loadPool(poolId);
     if (!pool) {
         throw new Error(`Deposit pool not found: ${poolId}`);
     }
@@ -122,26 +254,26 @@ export function registerDepositCommitment(
     participant.inputOutPoint = data.inputOutPoint;
     participant.noteCreatedAt = data.noteCreatedAt;
     participant.status = 'registered';
-    pool.updatedAt = Date.now();
+    pool.updatedAt = now();
 
     const registeredCount = pool.participants.filter(entry => entry.status === 'registered').length;
     if (registeredCount >= pool.targetParticipants) {
         pool.status = 'sealed';
-        const successor = [...depositPools.values()].find(candidate =>
-            candidate.denomination === pool.denomination &&
-            candidate.status === 'open' &&
-            candidate.poolId !== pool.poolId,
+        const successor = (await loadPoolsForDenomination(pool.denomination)).find(candidate =>
+            candidate.status === 'open' && candidate.poolId !== pool.poolId,
         );
         if (!successor) {
-            createDepositPool(pool.denomination, pool.targetParticipants);
+            await createDepositPool(BigInt(pool.denomination), pool.targetParticipants);
         }
     }
+
+    await savePool(pool);
 
     return {
         poolId: pool.poolId,
         commitments: pool.participants
             .filter(entry => entry.status === 'registered' && entry.commitment)
-            .map(entry => entry.commitment!) ,
+            .map(entry => entry.commitment!),
         leafIndex: pool.participants
             .filter(entry => entry.status === 'registered' && entry.commitment)
             .findIndex(commitmentEntry => commitmentEntry.participantId === participantId),
@@ -149,8 +281,8 @@ export function registerDepositCommitment(
     };
 }
 
-export function cancelDepositParticipant(poolId: string, participantId: string, reason?: string) {
-    const pool = depositPools.get(poolId);
+export async function cancelDepositParticipant(poolId: string, participantId: string, reason?: string) {
+    const pool = await loadPool(poolId);
     if (!pool) {
         throw new Error(`Deposit pool not found: ${poolId}`);
     }
@@ -160,32 +292,41 @@ export function cancelDepositParticipant(poolId: string, participantId: string, 
         throw new Error(`Deposit participant not found: ${participantId}`);
     }
 
-    if (participant.status === 'registered') {
-        return;
+    if (participant.status !== 'registered') {
+        participant.status = 'cancelled';
+        participant.cancelReason = reason;
+        pool.updatedAt = now();
+        await savePool(pool);
+    }
+}
+
+export async function getDepositPool(poolId: string) {
+    await pruneExpiredDepositPools();
+    return loadPool(poolId);
+}
+
+export async function listDepositPools() {
+    await pruneExpiredDepositPools();
+    if (await isRedisWritable()) {
+        const keys = await redis.keys(`${POOL_KEY_PREFIX}*`);
+        const pools = await Promise.all(keys.map(async (key) => {
+            const raw = await redis.get(key);
+            return raw ? (JSON.parse(raw) as DepositPool) : null;
+        }));
+
+        return pools
+            .filter((pool): pool is DepositPool => pool !== null)
+            .sort((left, right) => right.updatedAt - left.updatedAt);
     }
 
-    participant.status = 'cancelled';
-    participant.cancelReason = reason;
-    pool.updatedAt = Date.now();
+    const state = readFileState();
+    return Object.values(state.pools).sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
-export function getDepositPool(poolId: string) {
-    pruneExpiredDepositPools();
-    return depositPools.get(poolId) ?? null;
-}
-
-export function listDepositPools() {
-    pruneExpiredDepositPools();
-    return [...depositPools.values()]
-        .sort((left, right) => right.updatedAt - left.updatedAt);
-}
-
-export function getLatestDepositPool(denomination: bigint) {
-    pruneExpiredDepositPools();
-    const matching = [...depositPools.values()]
-        .filter(pool => pool.denomination === denomination)
-        .sort((left, right) => right.updatedAt - left.updatedAt);
-    return matching[0] ?? null;
+export async function getLatestDepositPool(denomination: bigint) {
+    await pruneExpiredDepositPools();
+    const pools = await loadPoolsForDenomination(denomination.toString());
+    return pools.sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
 }
 
 export function summarizeDepositPool(pool: DepositPool) {
