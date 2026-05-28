@@ -1,43 +1,35 @@
 # Deposit Finalization Design
 
-## Current State
+## Status
 
-The project now supports:
+This document now describes the **current** finalization model and the **next** protocol milestone.
+
+Completed already:
 
 - live CT minting on Pudge
-- `stealth-lock` outputs
-- real live note generation
-- coordinator-owned deposit pool/session state
-- durable coordinator deposit pools using Redis when available with file-backed fallback
+- coordinator-owned deposit pools
+- signing-phase deposit round flow in code
+- finalized-note retrieval after pool completion
+- permissionless direct-withdrawal default
+- passing Rust contract/integration test suite
 
-What the current deposit path does:
+## Current Deposit Finalization Model
 
-1. The frontend calls the backend deposit endpoint.
-2. The backend asks the coordinator to prepare a deposit participant slot.
-3. The backend mints a CT output on-chain for that participant.
-4. The backend registers the minted commitment back into the coordinator-owned pool.
-5. The frontend receives a real live note with a shared pool/session snapshot.
+The repo now implements a coordinator-backed signing-phase round:
 
-This is coordinator-backed, but it is still an **individual mint followed by pool registration** model.
+1. participant is prepared in the coordinator pool
+2. backend mints a staging CT cell
+3. participant is registered as minted in the pool
+4. deposits stay `pending`
+5. when threshold is reached:
+   - pool becomes `ready`
+   - unsigned round transaction is exposed
+   - participants sign
+   - coordinator collects signatures
+   - coordinator finalizes the round
+6. finalized notes are returned and bound to the mixed round output
 
-## What Is Still Missing
-
-To behave like a stronger multi-party deposit protocol, the coordinator must own not just pool membership,
-but also pool **finalization semantics**.
-
-That means moving from:
-
-- `mint -> register into pool`
-
-to something closer to:
-
-- `prepare participant -> wait for threshold -> finalize shared deposit round -> issue notes against finalized round`
-
-## Desired Final Model
-
-### 1. Deposit Pool Lifecycle
-
-Each deposit pool should progress through:
+### Current pool lifecycle
 
 - `open`
 - `ready`
@@ -45,9 +37,7 @@ Each deposit pool should progress through:
 - `complete`
 - `failed`
 
-### 2. Participant Lifecycle
-
-Each participant should progress through:
+### Current participant lifecycle
 
 - `pending`
 - `minted`
@@ -55,83 +45,88 @@ Each participant should progress through:
 - `finalized`
 - `cancelled`
 
-### 3. Finalization Trigger
+## What Is True Right Now
 
-A pool becomes `ready` when:
+The coordinator now owns:
 
-- registered participant count reaches `targetParticipants`
+- participant admission
+- pool membership
+- pool readiness
+- signature collection
+- pool finalization
+- finalized commitment snapshots
+- finalized note metadata
 
-Then the coordinator:
+The withdrawal side now assumes:
 
-- seals the pool
-- snapshots the commitment set
-- assigns canonical leaf ordering
-- generates final session metadata
-- marks participant notes as finalized against that exact snapshot
+- permissionless direct registry updates by default
+- relayer/coordinator assistance is optional UX, not the base trust model
 
-### 4. Canonical Session Snapshot
+## What Is Still Not Proven End-to-End
 
-The coordinator should produce one canonical session object:
+The remaining question is no longer whether the code paths exist.
 
-- `sessionId`
-- `poolId`
-- `denomination`
-- `commitments[]`
-- `leafAssignments`
-- `finalizedAt`
-- `status`
+The remaining question is whether the full signing-phase coordinator round has been exercised
+successfully on Pudge with multiple real JoyID wallets under live conditions.
 
-All notes from that round must reference this same finalized snapshot.
+Specifically, we still need to confirm:
 
-### 5. Optional Stronger On-Chain Finalization
+1. multiple wallets can join the same live round
+2. each participant can sign the unsigned round as expected
+3. coordinator finalization produces a valid on-chain mixed CT transaction
+4. finalized notes received by all participants match the final mixed outputs
 
-If product requirements demand a stronger protocol, the coordinator can also publish
-a pool-finalization artifact on-chain or in a registry cell, such as:
+## Next Milestone
 
-- a Merkle root of the pool commitment set
-- a deposit round metadata cell
-- a coordinator-signed session certificate
+### 1. Multi-wallet live validation
 
-This would give withdrawals a stronger shared source of truth than local/off-chain snapshots.
+Run a real live round on Pudge using multiple JoyID wallets and confirm:
 
-## Recommended Next Implementation Steps
+- early deposits remain pending
+- pool transitions to `ready`
+- signatures are collected from all participants
+- coordinator finalizes successfully
+- final mixed transaction lands on-chain
+- finalized notes are saved for all participants
 
-### Short-Term
+### 2. Coordinator hardening
 
-1. Extend coordinator deposit pool status from:
-   - `open | sealed | complete`
-   to:
-   - `open | ready | finalizing | complete | failed`
+After live validation, improve:
 
-2. Add participant-level status transitions:
-   - `pending | minted | registered | finalized | cancelled`
+- retry/recovery behavior when one signer stalls
+- clearer timeout / abort semantics
+- operator visibility into pool progress
+- finalized session inspection endpoints
 
-3. Add a coordinator finalization routine:
-   - when `registeredCount >= targetSize`
-   - freeze participant ordering
-   - create canonical `commitments[]`
-   - mark pool `complete`
+### 3. Optional stronger protocol step
 
-4. Add a `GET /deposit/finalized/:sessionId` endpoint.
+If product requirements demand a stronger settlement artifact, consider adding:
 
-### Medium-Term
+- an on-chain finalized session root
+- a dedicated pool-finalization registry cell
+- or another verifiable deposit-round artifact
 
-5. Make frontend withdrawals prefer finalized session snapshots over mutable latest-pool snapshots.
+That would move the system from:
 
-6. Add pool rollover logic that only opens the next pool after the current one is finalized.
+- coordinator-finalized shared round state
 
-### Long-Term
+to:
 
-7. If necessary, publish finalized deposit-session roots on-chain so pool membership becomes verifiable
-   beyond coordinator state.
+- coordinator-finalized plus on-chain verifiable finalized round metadata
 
 ## Summary
 
-The repo is already past the fake-preview stage and now has a real coordinator-backed live deposit path.
+The repo is now beyond the earlier “mint then register and stop” architecture.
 
-The remaining leap is:
+It currently implements:
 
-- from **coordinator-managed pool membership**
-- to **coordinator-managed finalized multi-party deposit rounds**
+- coordinator-backed signing-phase deposit rounds
+- finalized-note issuance after round completion
+- permissionless default withdrawal authority
 
-That is the next protocol milestone.
+The next real task is not more Step 3/4 plumbing.
+
+The next real task is:
+
+- prove the deposit finalization flow live with multiple wallets on Pudge
+- then harden it for production behavior

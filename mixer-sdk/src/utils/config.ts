@@ -77,7 +77,7 @@ function readRuntimeMode(env: EnvLike, hasRegistry: boolean): RuntimeMode {
 
 function readWithdrawalAuthority(env: EnvLike): WithdrawalAuthorityMode {
     return (env.MIXER_WITHDRAWAL_AUTHORITY as WithdrawalAuthorityMode | undefined)
-        ?? 'operator-registry-lock';
+        ?? 'direct';
 }
 
 export function loadMixerRuntimeConfig(env: EnvLike): MixerRuntimeConfig {

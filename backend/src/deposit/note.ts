@@ -28,7 +28,7 @@ export async function buildMintedCtNote(params: MintedCtNoteParams): Promise<Dep
         runtimeMode: 'live',
         proofEncoding: 'groth16-bn254-arkworks-uncompressed-v1',
         registrySnapshot: {
-            authority: 'operator-registry-lock',
+            authority: 'direct',
         },
     };
 }

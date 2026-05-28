@@ -13,7 +13,7 @@ The repo now treats the root `src/` Vite app as legacy and unsupported. New prod
 - Supported denomination: `100 CT`
 - Deposit path: backend-driven live CT minting on Pudge with coordinator-backed deposit pool/session state
 - Withdrawal path: browser-side Groth16 proof generation plus live transaction assembly
-- Live withdrawal authority: runtime-configurable, with coordinator/relayer submission intended as the default production path
+- Live withdrawal authority: permissionless direct registry updates by default, with relayer/coordinator submission available as optional UX
 
 ## Tooling
 
@@ -34,7 +34,7 @@ Copy `.env.example` to `.env` and fill the deployment pointers. The frontend wil
 Important env values:
 
 - `MIXER_RUNTIME_MODE=live|disabled`
-- `MIXER_WITHDRAWAL_AUTHORITY=operator-registry-lock|self-custodied|coordinator`
+- `MIXER_WITHDRAWAL_AUTHORITY=direct|operator-registry-lock|self-custodied|coordinator`
 - `NULLIFIER_REGISTRY_*` for live withdrawal preparation/broadcast
 - `DEPOSIT_POOL_TARGET_PARTICIPANTS` for coordinator-backed deposit pool sizing
 

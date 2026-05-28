@@ -18,7 +18,7 @@ export interface RegistryReference {
 }
 
 export type RuntimeMode = 'disabled' | 'live';
-export type WithdrawalAuthorityMode = 'operator-registry-lock' | 'self-custodied' | 'coordinator';
+export type WithdrawalAuthorityMode = 'direct' | 'operator-registry-lock' | 'self-custodied' | 'coordinator';
 
 export interface MixerRuntimeConfig {
     ckbRpcUrl: string;

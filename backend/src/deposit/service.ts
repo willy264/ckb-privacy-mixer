@@ -129,6 +129,7 @@ export async function fetchFinalizedDepositNote(poolId: string, participantId: s
     note.registrySnapshot = {
         ...(note.registrySnapshot ?? {}),
         size: session.size,
+        authority: note.registrySnapshot?.authority ?? 'direct',
     };
 
     return {

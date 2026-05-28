@@ -108,7 +108,7 @@ async function main() {
         proofEncoding: 'groth16-bn254-arkworks-uncompressed-v1',
         denomination: Number(denomination),
         registrySnapshot: {
-            authority: 'operator-registry-lock'
+            authority: 'direct'
         }
     };
 

@@ -22,7 +22,7 @@ export interface DepositNote {
   registrySnapshot?: {
     outPoint?: string;
     size?: number;
-    authority?: 'operator-registry-lock' | 'self-custodied' | 'coordinator';
+    authority?: 'direct' | 'operator-registry-lock' | 'self-custodied' | 'coordinator';
   };
   denomination: number;
   withdrawalStatus?: VaultWithdrawalStatus;

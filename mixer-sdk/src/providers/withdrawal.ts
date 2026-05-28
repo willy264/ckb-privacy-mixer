@@ -119,12 +119,6 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             throw new Error('The connected JoyID address does not control any withdrawal inputs.');
         }
 
-        if (witnessIndexes.length !== inputs.length) {
-            throw new Error(
-                'The connected JoyID address does not control the nullifier registry cell lock, so browser-side live broadcast cannot complete.',
-            );
-        }
-
         return {
             transaction: helpers.createTransactionFromSkeleton(txSkeleton) as CkbTransaction,
             witnessIndexes,

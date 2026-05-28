@@ -120,7 +120,7 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
     const proofBytes = proof.packedGroth16Proof?.bytes ?? proof.snarkProof ?? proof.serializedWitness;
     const proofWitnessHex = `0x${Array.from(proofBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
     const runtimeMode = note.runtimeMode ?? 'live';
-    const authorityMode = note.registrySnapshot?.authority ?? 'operator-registry-lock';
+    const authorityMode = note.registrySnapshot?.authority ?? 'direct';
 
     return {
         rawTransaction: {

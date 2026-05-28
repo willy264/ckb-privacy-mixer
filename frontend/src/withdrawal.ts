@@ -62,7 +62,7 @@ async function hydrateSessionCommitments(note: DepositNote) {
       note.registrySnapshot = {
         ...(note.registrySnapshot ?? {}),
         size: remote.size,
-        authority: remote.status === 'complete' ? 'operator-registry-lock' : note.registrySnapshot?.authority,
+        authority: remote.status === 'complete' ? 'direct' : note.registrySnapshot?.authority,
       };
       if (remote.finalizedAt) {
         note.createdAt = Math.min(note.createdAt, remote.finalizedAt);
@@ -168,7 +168,7 @@ export async function prepareVaultWithdrawal(
 
   const warnings: string[] = [];
   if (runtimeStatus.authority === 'operator-registry-lock') {
-    warnings.push('Live broadcast requires the operator-controlled JoyID wallet that owns the nullifier registry lock.');
+    warnings.push('This runtime is still configured for operator-controlled registry authority instead of direct permissionless withdrawal.');
   }
 
   const provider = new AggronWithdrawalProvider({

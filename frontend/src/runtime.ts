@@ -6,7 +6,7 @@ export interface FrontendRuntimeStatus {
   config: MixerRuntimeConfig | null;
   error?: string;
   mode: 'disabled' | 'preview' | 'live';
-  authority: 'operator-registry-lock' | 'self-custodied' | 'coordinator';
+  authority: 'direct' | 'operator-registry-lock' | 'self-custodied' | 'coordinator';
 }
 
 function collectEnv(): EnvRecord {
@@ -32,7 +32,7 @@ export function tryLoadFrontendRuntimeConfig(): FrontendRuntimeStatus {
       config: null,
       error: error instanceof Error ? error.message : 'Unable to read runtime config.',
       mode: 'disabled',
-      authority: 'operator-registry-lock',
+      authority: 'direct',
     };
   }
 }
