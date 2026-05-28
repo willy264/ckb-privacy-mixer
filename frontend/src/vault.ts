@@ -1,10 +1,29 @@
-import type { DepositNote as MixerDepositNote } from 'mixer-sdk';
 import { fetchDepositSession } from './relayer';
 
 export type WithdrawalMode = 'live';
 export type VaultWithdrawalStatus = 'idle' | 'proof-ready' | 'submitted';
 
-export interface DepositNote extends MixerDepositNote {
+export interface DepositNote {
+  version?: 2;
+  sessionId: string;
+  inputOutPoint: string;
+  blindingFactor: string;
+  stealthOutputAddress: string;
+  createdAt: number;
+  commitment?: string;
+  sessionCommitments?: string[];
+  nullifier?: string;
+  leafIndex?: number;
+  merkleRoot?: string;
+  merkleProof?: any;
+  proofEncoding?: 'groth16-bn254-arkworks-uncompressed-v1';
+  depositTxHash?: string;
+  runtimeMode?: 'disabled' | 'live';
+  registrySnapshot?: {
+    outPoint?: string;
+    size?: number;
+    authority?: 'operator-registry-lock' | 'self-custodied' | 'coordinator';
+  };
   denomination: number;
   withdrawalStatus?: VaultWithdrawalStatus;
   lastPreparedAt?: number;
