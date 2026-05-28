@@ -28,6 +28,24 @@ export interface RelayJobResult {
     error?: string;
 }
 
+export interface DepositJobResult {
+    note: unknown;
+    mintTxHash: string;
+    stealthArgs: string;
+    sessionId: string;
+    inputOutPoint: string;
+}
+
+export interface DepositSessionSnapshot {
+    sessionId: string;
+    denomination: number;
+    commitments: string[];
+    size: number;
+    updatedAt: number;
+    status: 'open' | 'sealed';
+    targetSize: number;
+}
+
 /** Read the relayer URL from Vite env, defaulting to localhost for dev. */
 export function getRelayerUrl(): string {
     return (import.meta as any).env?.VITE_RELAYER_URL ?? 'http://localhost:4000';
@@ -82,6 +100,74 @@ export async function submitToRelayer(
     }
 
     return body as RelayJobResult;
+}
+
+export async function submitLiveDeposit(
+    walletAddress: string,
+    endpoint = getRelayerUrl(),
+): Promise<DepositJobResult> {
+    const res = await fetch(`${endpoint}/deposit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress }),
+    });
+
+    const body = (await res.json().catch(() => ({ error: 'Empty response from deposit service' }))) as
+        | DepositJobResult
+        | { error: string };
+
+    if (!res.ok) {
+        throw new Error(('error' in body ? body.error : null) ?? `Deposit failed: HTTP ${res.status}`);
+    }
+
+    return body as DepositJobResult;
+}
+
+export async function fetchDepositSession(
+    sessionId: string,
+    endpoint = getRelayerUrl(),
+): Promise<DepositSessionSnapshot> {
+    const res = await fetch(`${endpoint}/deposit/session/${encodeURIComponent(sessionId)}`);
+    const body = (await res.json().catch(() => ({ error: 'Empty response from deposit session endpoint' }))) as
+        | DepositSessionSnapshot
+        | { error: string };
+
+    if (!res.ok) {
+        throw new Error(('error' in body ? body.error : null) ?? `Deposit session lookup failed: HTTP ${res.status}`);
+    }
+
+    return body as DepositSessionSnapshot;
+}
+
+export async function fetchLatestDepositPool(
+    denomination: number,
+    endpoint = getRelayerUrl(),
+): Promise<DepositSessionSnapshot> {
+    const res = await fetch(`${endpoint}/deposit/pools/latest/${denomination}`);
+    const body = (await res.json().catch(() => ({ error: 'Empty response from deposit pool endpoint' }))) as
+        | DepositSessionSnapshot
+        | { error: string };
+
+    if (!res.ok) {
+        throw new Error(('error' in body ? body.error : null) ?? `Deposit pool lookup failed: HTTP ${res.status}`);
+    }
+
+    return body as DepositSessionSnapshot;
+}
+
+export async function fetchDepositPools(
+    endpoint = getRelayerUrl(),
+): Promise<DepositSessionSnapshot[]> {
+    const res = await fetch(`${endpoint}/deposit/pools`);
+    const body = (await res.json().catch(() => ({ error: 'Empty response from deposit pools endpoint' }))) as
+        | DepositSessionSnapshot[]
+        | { error: string };
+
+    if (!res.ok) {
+        throw new Error(('error' in body ? body.error : null) ?? `Deposit pools lookup failed: HTTP ${res.status}`);
+    }
+
+    return body as DepositSessionSnapshot[];
 }
 
 /**

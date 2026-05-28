@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "poolsByDenomination": {
+    "100": [
+      {
+        "sessionId": "pudge_ct_pool_100",
+        "denomination": 100,
+        "targetSize": 5,
+        "status": "open",
+        "entries": [
+          {
+            "inputOutPoint": "0xb4d0ee455da62e8e223a6b09ed8c0f868ae67a7ac896e741e2805ec0df08ef2f:0x1",
+            "depositTxHash": "0xb4d0ee455da62e8e223a6b09ed8c0f868ae67a7ac896e741e2805ec0df08ef2f",
+            "stealthOutputAddress": "0x02bafc8c3b89a1962d11f80a743d95e04d36456270535ffb2f386b7c3e0641462883570521944837f7f73db13c3b14d3d007c5e726",
+            "blindingFactor": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "commitment": "0x24fbea6510f6b526b9a2bbfa7a3c9f19f0d774418dfda22945620976364b4a13",
+            "createdAt": 1779955232571
+          },
+          {
+            "inputOutPoint": "0x2af2795491e03c9b674c654610fe261f855474ed6ce3d6d94721f38413c6117d:0x1",
+            "depositTxHash": "0x2af2795491e03c9b674c654610fe261f855474ed6ce3d6d94721f38413c6117d",
+            "stealthOutputAddress": "0x0266fe844c7847c5ba7bf248a763abdfcaf2d591a0e03938732d9560808fa0a137e6ef2f8bc5a81981f18437c7e43f2046d04d2ec3",
+            "blindingFactor": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "commitment": "0x1d6e4492cd4b2193979f56438e31ac0c5d8c3f3cdf087d2af00b70535333f78b",
+            "createdAt": 1779955788908
+          }
+        ],
+        "updatedAt": 1779955788910
+      }
+    ]
+  }
+}

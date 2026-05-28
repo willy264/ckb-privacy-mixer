@@ -1,4 +1,4 @@
-import { blake2b, serializeInput, scriptToHash } from '@nervosnetwork/ckb-sdk-utils';
+import { blake2b, PERSONAL, serializeInput, scriptToHash } from '@nervosnetwork/ckb-sdk-utils';
 import { helpers, commons, config as lumosConfig } from '@ckb-lumos/lumos';
 import { getDeployerAddress, getDeployerLock, SHANNONS } from './lumos.js';
 
@@ -47,10 +47,10 @@ export function createCtInfoTypeArgs(firstInput: any, outputIndex: bigint | numb
     indexBytes.writeBigUInt64LE(BigInt(outputIndex));
     const payload = Buffer.concat([inputBytes, indexBytes]);
 
-    const hasher = blake2b(32, null, null, null);
+    const hasher = blake2b(32, null, null, PERSONAL);
     hasher.update(payload);
     const digest = hasher.digest('hex');
-    return `0x${digest}00`;
+    return `0x${digest}`;
 }
 
 export async function buildGenesisCtInfoTransaction(params: {

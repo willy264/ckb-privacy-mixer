@@ -1,9 +1,10 @@
 import '../env.js';
-import { buildAndSendTransaction, getIndexer, initializePudge, requiredEnv, waitForTransaction } from './lumos.js';
+import { buildAndSendTransaction, getIndexer, initializePudge, requiredEnv, resolveWorkingEndpointPair, waitForTransaction } from './lumos.js';
 import { buildGenesisCtInfoTransaction, MINTABLE } from './obscell.js';
 
 async function main() {
     initializePudge();
+    const endpoint = await resolveWorkingEndpointPair();
 
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
     const ctInfoCodeHash = requiredEnv('CT_INFO_TYPE_CODE_HASH');
@@ -14,7 +15,7 @@ async function main() {
         privateKey,
         ctInfoCodeHash,
         ctInfoHashType,
-        indexer: getIndexer(),
+        indexer: getIndexer(endpoint),
         ctInfoDep: {
             txHash: requiredEnv('CT_INFO_TYPE_TX_HASH'),
             index: requiredEnv('CT_INFO_TYPE_INDEX'),

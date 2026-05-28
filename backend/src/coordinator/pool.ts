@@ -15,6 +15,11 @@ export interface PoolParticipant {
     walletAddress: string;
     /** ECDSA/JoyID signature over the mixed transaction, submitted in Step 2. */
     signature?: string;
+    /** Optional live deposit metadata when the participant came from a backend-minted CT deposit. */
+    depositTxHash?: string;
+    inputOutPoint?: string;
+    blindingFactor?: string;
+    noteCreatedAt?: number;
     status: ParticipantStatus;
     joinedAt: number;
 }
@@ -81,6 +86,7 @@ export function joinPool(
     commitment: string,
     stealthOutputAddress: string,
     walletAddress: string,
+    extra?: Partial<Pick<PoolParticipant, 'depositTxHash' | 'inputOutPoint' | 'blindingFactor' | 'noteCreatedAt'>>,
 ): string {
     const pool = pools.get(poolId);
     if (!pool) throw new Error(`Pool not found: ${poolId}`);
@@ -92,6 +98,10 @@ export function joinPool(
         commitment,
         stealthOutputAddress,
         walletAddress,
+        depositTxHash: extra?.depositTxHash,
+        inputOutPoint: extra?.inputOutPoint,
+        blindingFactor: extra?.blindingFactor,
+        noteCreatedAt: extra?.noteCreatedAt,
         status: 'waiting',
         joinedAt: Date.now(),
     });
@@ -115,6 +125,14 @@ export function poolSummary(pool: MixPool) {
         status:               pool.status,
         isFull:               pool.participants.length >= pool.requiredParticipants,
     };
+}
+
+export function getLatestPoolByDenomination(denomination: bigint): MixPool | null {
+    pruneExpiredPools();
+    const matching = [...pools.values()]
+        .filter(pool => pool.denomination === denomination)
+        .sort((left, right) => right.createdAt - left.createdAt);
+    return matching[0] ?? null;
 }
 
 /** Remove expired / completed pools to prevent unbounded memory growth. */

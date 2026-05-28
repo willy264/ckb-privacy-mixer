@@ -12,7 +12,6 @@ import {
   Copy
 } from "lucide-react";
 import { connect, initConfig } from "@joyid/ckb";
-import { type DepositResult } from "mixer-sdk";
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import {
   broadcastPreparedWithdrawal,
@@ -20,19 +19,18 @@ import {
   relayWithdrawal,
   type PreparedVaultWithdrawal,
 } from "./withdrawal";
-import { fetchRelayerInfo, type RelayerInfo } from "./relayer";
+import { fetchLatestDepositPool, fetchRelayerInfo, submitLiveDeposit, type DepositSessionSnapshot, type RelayerInfo } from "./relayer";
 import {
   getNoteId,
   getNotesFromVault,
   saveNoteToVault,
   refreshVault,
+  refreshVaultNotesFromSession,
   updateNoteInVault,
   exportNoteBackup,
   importNoteBackup,
   type DepositNote,
 } from "./vault";
-import { joinLiveMix } from "./coordinator";
-import { generateStealthAddress } from "mixer-sdk";
 
 type Denomination = 10 | 100 | 1000;
 type BannerTone = "success" | "error" | "info";
@@ -48,6 +46,11 @@ interface PoolState {
 interface StatusBanner {
   tone: BannerTone;
   text: string;
+}
+
+interface DepositFlowInfo {
+  kind: "backend-ct-mint";
+  description: string;
 }
 
 interface WithdrawalPreview extends PreparedVaultWithdrawal {
@@ -79,7 +82,11 @@ export default function App() {
   const [broadcastBusyId, setBroadcastBusyId] = useState<string | null>(null);
   const [preparedWithdrawals, setPreparedWithdrawals] = useState<Record<string, WithdrawalPreview>>({});
   const [statusBanner, setStatusBanner] = useState<StatusBanner | null>(null);
-  const [lastDepositResult] = useState<DepositResult | null>(null);
+  const [depositFlowInfo] = useState<DepositFlowInfo>({
+    kind: "backend-ct-mint",
+    description: "Backend-driven live CT mint on Pudge using stealth-lock outputs and saved vault notes.",
+  });
+  const [latestDepositPool, setLatestDepositPool] = useState<DepositSessionSnapshot | null>(null);
   const [relayBusyId, setRelayBusyId] = useState<string | null>(null);
   const [relayerInfo, setRelayerInfo] = useState<RelayerInfo | null>(null);
   const [runtimeStatus] = useState(() => tryLoadFrontendRuntimeConfig());
@@ -92,10 +99,10 @@ export default function App() {
     { denomination: 10, participants: 0, maxParticipants: 5, available: false, statusLabel: "Unavailable" },
     {
       denomination: 100,
-      participants: lastDepositResult?.session.participantCount ?? 0,
-      maxParticipants: lastDepositResult?.session.requiredParticipants ?? 1, // Set to 1 for solo testing
+      participants: latestDepositPool?.denomination === 100 ? latestDepositPool.size : vaultNotes.filter(note => note.denomination === 100).length,
+      maxParticipants: latestDepositPool?.denomination === 100 ? latestDepositPool.targetSize : 5,
       available: true,
-      statusLabel: "Live",
+      statusLabel: latestDepositPool?.denomination === 100 ? latestDepositPool.status : "Live",
     },
     { denomination: 1000, participants: 0, maxParticipants: 3, available: false, statusLabel: "Unavailable" },
   ];
@@ -112,8 +119,13 @@ export default function App() {
       joyidAppURL,
       network,
     });
-    void refreshVault().then(notes => setVaultNotes(notes));
+    void refreshVault()
+      .then(async notes => {
+        const refreshedNotes = await refreshVaultNotesFromSession(notes);
+        setVaultNotes(refreshedNotes);
+      });
     void fetchRelayerInfo().then(info => setRelayerInfo(info)).catch(console.error);
+    void fetchLatestDepositPool(100).then(setLatestDepositPool).catch(() => setLatestDepositPool(null));
   }, []);
 
   const handleConnect = async () => {
@@ -139,29 +151,25 @@ export default function App() {
       return;
     }
 
-    setStatusBanner({ tone: "info", text: "Starting live CoinJoin deposit flow..." });
+    setStatusBanner({ tone: "info", text: "Minting a live CT deposit note on Pudge..." });
 
     try {
-      const stealthOutputAddress = generateStealthAddress(walletAddress);
-
-      const result = await joinLiveMix({
-        denomination: BigInt(selectedPool),
-        stealthOutputAddress,
-        walletAddress,
-        onProgress: (step) => {
-          setStatusBanner({
-            tone: "info",
-            text: `CoinJoin in progress... ${step.toFixed(0)}%`,
-          });
-        }
-      });
-
+      const result = await submitLiveDeposit(walletAddress);
       await saveNoteToVault(result.note as DepositNote);
       setVaultNotes(getNotesFromVault());
+      setLatestDepositPool({
+        sessionId: result.sessionId,
+        denomination: selectedPool,
+        commitments: (result.note as DepositNote).sessionCommitments ?? [],
+        size: (result.note as DepositNote).sessionCommitments?.length ?? 1,
+        updatedAt: Date.now(),
+        status: ((result.note as DepositNote).sessionCommitments?.length ?? 1) >= 5 ? "sealed" : "open",
+        targetSize: 5,
+      });
 
       setStatusBanner({
         tone: "success",
-        text: `Deposit successful! Note added to your vault.`,
+        text: `Deposit successful! Mint tx ${result.mintTxHash.slice(0, 12)}... added a live note to your vault.`,
       });
     } catch (error) {
       setStatusBanner({
@@ -487,6 +495,19 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div className="mb-6 rounded-lg border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                    <div className="font-orbitron text-xs uppercase tracking-[0.2em] text-sky-300 mb-2">Deposit Path</div>
+                    <div>{depositFlowInfo.description}</div>
+                    <div className="mt-2 text-xs text-sky-100/80">
+                      A successful deposit mints a live CT cell, stores a vault note, and joins the shared Pudge deposit session for this denomination.
+                    </div>
+                    {latestDepositPool && (
+                      <div className="mt-3 text-xs text-sky-100/80">
+                        Current pool: {latestDepositPool.sessionId} ({latestDepositPool.size}/{latestDepositPool.targetSize}, {latestDepositPool.status})
+                      </div>
+                    )}
+                  </div>
+
                     <button
                       className="w-full py-4 rounded-lg bg-gradient-to-r from-[#00f2ff] to-[#00a2ff] text-black font-orbitron font-bold text-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                       onClick={() => void startMixing()}
@@ -655,10 +676,14 @@ export default function App() {
             <AlertCircle className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
             <div className="text-sm text-blue-200/80 leading-relaxed">
               <strong className="text-blue-400 block mb-1">Current Product Boundary</strong>
-              This build supports live registry-backed withdrawal preparation and broadcast. Deposit creation is disabled until the repo has real on-chain CT input sourcing and coordinator-backed settlement.
+              This build now mints live CT deposit notes on Pudge and supports live registry-backed withdrawal preparation and broadcast. Deposits currently use backend-driven CT minting rather than the older CoinJoin preview flow.
               <div className="mt-3 space-y-1 text-xs text-blue-100/80">
                 <div>Runtime: {runtimeReady ? "live withdrawal metadata ready" : runtimeMode}</div>
-                <div>Deposits: unavailable</div>
+                <div>Deposits: live CT mint path enabled</div>
+                <div>Session model: backend-managed rotating deposit pools with shared commitment snapshots</div>
+                {latestDepositPool && (
+                  <div>Latest pool: {latestDepositPool.sessionId} ({latestDepositPool.size}/{latestDepositPool.targetSize}, {latestDepositPool.status})</div>
+                )}
                 {relayerInfo && (
                   <div>
                     Relayer: {relayerInfo.network} at {relayerInfo.feePercent}% fee

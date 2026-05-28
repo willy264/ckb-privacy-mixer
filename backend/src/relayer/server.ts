@@ -4,6 +4,12 @@ import cors from 'cors';
 import { loadRelayerConfig } from './config.js';
 import { RelayerWallet } from './wallet.js';
 import { submitRelay, type RelayRequest } from './relay.js';
+import { performLiveDeposit } from '../deposit/service.js';
+import {
+    fetchCoordinatorDepositPools,
+    fetchCoordinatorDepositSession,
+    fetchLatestCoordinatorDepositPool,
+} from '../coordinator/client.js';
 import { logger } from '../utils/logger.js';
 import { redis } from '../utils/redis.js';
 
@@ -37,6 +43,54 @@ export function createRelayerApp() {
         message: { error: 'Too many requests, please try again later.' }
     });
     app.use('/relay', apiLimiter);
+
+    app.post('/deposit', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const walletAddress = typeof req.body?.walletAddress === 'string' ? req.body.walletAddress.trim() : '';
+            if (!walletAddress) {
+                res.status(400).json({ error: 'walletAddress is required' });
+                return;
+            }
+
+            const result = await performLiveDeposit(walletAddress);
+            res.status(201).json(result);
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.get('/deposit/session/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const pool = await fetchCoordinatorDepositSession(req.params.sessionId);
+            res.json(pool);
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.get('/deposit/pools', async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const pools = await fetchCoordinatorDepositPools();
+            res.json(pools);
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.get('/deposit/pools/latest/:denomination', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const denomination = Number.parseInt(req.params.denomination, 10);
+            if (!Number.isFinite(denomination)) {
+                res.status(400).json({ error: 'Invalid denomination' });
+                return;
+            }
+
+            const pool = await fetchLatestCoordinatorDepositPool(denomination);
+            res.json(pool);
+        } catch (err) {
+            next(err);
+        }
+    });
 
     // ── POST /relay ────────────────────────────────────────────────────────────
     app.post('/relay', async (req: Request, res: Response, next: NextFunction) => {

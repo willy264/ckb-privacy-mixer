@@ -12,6 +12,15 @@ import {
     poolSummary,
     pools,
 } from './pool.js';
+import {
+    cancelDepositParticipant,
+    getDepositPool,
+    getLatestDepositPool,
+    listDepositPools,
+    prepareDepositParticipant,
+    registerDepositCommitment,
+    summarizeDepositPool,
+} from './deposit-pool.js';
 import { buildCoinJoinTransaction, recordSignature, broadcastCoinJoin } from './session.js';
 import { logger } from '../utils/logger.js';
 

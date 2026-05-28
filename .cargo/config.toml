@@ -1,5 +1,8 @@
 [target.riscv64imac-unknown-none-elf]
-rustflags = []
+rustflags = [
+    "-C",
+    "target-feature=-a,-zaamo,-zalrsc",
+]
 
 [env]
 CLANG = "riscv64-unknown-elf-gcc.exe"

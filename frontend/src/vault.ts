@@ -1,4 +1,5 @@
 import type { DepositNote as MixerDepositNote } from 'mixer-sdk';
+import { fetchDepositSession } from './relayer';
 
 export type WithdrawalMode = 'live';
 export type VaultWithdrawalStatus = 'idle' | 'proof-ready' | 'submitted';
@@ -200,6 +201,51 @@ export function getNotesFromVault(): DepositNote[] {
 export async function refreshVault(): Promise<DepositNote[]> {
   cachedNotes = await readVault();
   return cachedNotes;
+}
+
+export async function refreshVaultNotesFromSession(existingNotes?: DepositNote[]): Promise<DepositNote[]> {
+  const notes = existingNotes ?? await readVault();
+  let changed = false;
+
+  for (const note of notes) {
+    if (!note.sessionId || !note.commitment) {
+      continue;
+    }
+
+    try {
+      const remote = await fetchDepositSession(note.sessionId);
+      if (!remote.commitments.includes(note.commitment)) {
+        continue;
+      }
+
+      const nextLeafIndex = remote.commitments.findIndex(commitment => commitment === note.commitment);
+      const nextSessionCommitments = remote.commitments as any;
+      const nextRegistrySize = remote.size;
+
+      if (
+        JSON.stringify(note.sessionCommitments ?? []) !== JSON.stringify(nextSessionCommitments) ||
+        note.leafIndex !== nextLeafIndex ||
+        note.registrySnapshot?.size !== nextRegistrySize
+      ) {
+        note.sessionCommitments = nextSessionCommitments;
+        note.leafIndex = nextLeafIndex;
+        note.registrySnapshot = {
+          ...(note.registrySnapshot ?? {}),
+          size: nextRegistrySize,
+        };
+        changed = true;
+      }
+    } catch {
+      // ignore backend session refresh failures and keep local vault data
+    }
+  }
+
+  if (changed) {
+    await writeVault(notes);
+  }
+
+  cachedNotes = notes;
+  return notes;
 }
 
 export async function saveNoteToVault(note: DepositNote) {

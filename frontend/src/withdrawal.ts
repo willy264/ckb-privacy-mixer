@@ -10,6 +10,7 @@ import {
   type WithdrawalTransaction,
 } from 'mixer-sdk';
 import { getGroth16ArtifactUrls, tryLoadFrontendRuntimeConfig } from './runtime';
+import { fetchDepositSession } from './relayer';
 import type { DepositNote, WithdrawalMode } from './vault';
 import { submitToRelayer, pollRelayStatus, getRelayerUrl } from './relayer';
 
@@ -38,6 +39,33 @@ function resolveSessionCommitments(note: DepositNote) {
   }
 
   return [note.commitment];
+}
+
+async function hydrateSessionCommitments(note: DepositNote) {
+  const localCommitments = resolveSessionCommitments(note);
+  if (!note.sessionId) {
+    return localCommitments;
+  }
+
+  try {
+    const remote = await fetchDepositSession(note.sessionId);
+    if (remote.commitments.length > 0 && remote.commitments.includes(note.commitment!)) {
+      note.sessionCommitments = remote.commitments as any;
+      const refreshedIndex = remote.commitments.findIndex(commitment => commitment === note.commitment);
+      if (refreshedIndex >= 0) {
+        note.leafIndex = refreshedIndex;
+      }
+      note.registrySnapshot = {
+        ...(note.registrySnapshot ?? {}),
+        size: remote.size,
+      };
+      return remote.commitments;
+    }
+  } catch {
+    // fall back to the locally stored snapshot
+  }
+
+  return localCommitments;
 }
 
 function validateLiveNote(note: DepositNote) {
@@ -110,7 +138,7 @@ export async function prepareVaultWithdrawal(
 
   validateLiveNote(note);
 
-  const commitments = resolveSessionCommitments(note);
+  const commitments = await hydrateSessionCommitments(note);
   const leafIndex = resolveLeafIndex(note, commitments);
   const tree = await buildMerkleTree(commitments);
   const proof = await buildRealWithdrawalProof(
