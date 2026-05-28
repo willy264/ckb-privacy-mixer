@@ -1,8 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 
 function main() {
-    const vkPath = path.resolve('circuits/verification_key.json');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const repoRoot = path.resolve(__dirname, '..');
+
+    const vkPath = path.resolve(repoRoot, 'circuits', 'verification_key.json');
     const vk = JSON.parse(fs.readFileSync(vkPath, 'utf8'));
 
     // Helper to format a large decimal string into a Rust big integer (u64 limbs)
@@ -72,7 +77,7 @@ ${vk.IC.map((ic: string[]) => `            G1Affine::new(
 }
 `;
 
-    fs.writeFileSync(path.resolve('contracts/zk-membership-type/src/vk.rs'), rsCode);
+    fs.writeFileSync(path.resolve(repoRoot, 'contracts', 'zk-membership-type', 'src', 'vk.rs'), rsCode);
     console.log('Generated vk.rs');
 }
 
