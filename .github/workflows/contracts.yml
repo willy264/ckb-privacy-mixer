@@ -28,6 +28,11 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Install RISC-V GNU toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf
+
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 

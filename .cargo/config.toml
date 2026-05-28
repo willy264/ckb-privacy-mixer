@@ -5,7 +5,7 @@ rustflags = [
 ]
 
 [env]
-CLANG = "riscv64-unknown-elf-gcc.exe"
-CC_riscv64imac_unknown_none_elf = "riscv64-unknown-elf-gcc.exe"
-AR_riscv64imac_unknown_none_elf = "riscv64-unknown-elf-ar.exe"
+CLANG = "riscv64-unknown-elf-gcc"
+CC_riscv64imac_unknown_none_elf = "riscv64-unknown-elf-gcc"
+AR_riscv64imac_unknown_none_elf = "riscv64-unknown-elf-ar"
 CFLAGS_riscv64imac_unknown_none_elf = "-march=rv64imc -mabi=lp64"
