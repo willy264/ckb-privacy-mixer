@@ -92,38 +92,18 @@ function createCtTokenScript(ctTokenCodeHash: string, ctTokenHashType: 'data' | 
     };
 }
 
-function isStealthArgsHex(value: string) {
-    return /^0x[0-9a-fA-F]{106}$/.test(value);
-}
-
-function createStealthLockScript(stealthLockCodeHash: string, stealthLockHashType: 'data' | 'data1' | 'type', args: string) {
-    return {
-        codeHash: stealthLockCodeHash,
-        hashType: stealthLockHashType,
-        args,
-    };
-}
-
 async function main() {
     initializePudge();
     lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
     const endpoint = await resolveWorkingEndpointPair();
 
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
-    const recipientStealthArgs = process.argv[2];
+    const recipientAddress = process.argv[2] ?? getDeployerAddress(privateKey);
     const ctInfoCodeHash = requiredEnv('CT_INFO_TYPE_CODE_HASH');
     const ctInfoHashType = requiredEnv('CT_INFO_TYPE_HASH_TYPE') as 'data' | 'data1' | 'type';
     const ctTokenCodeHash = requiredEnv('CT_TOKEN_TYPE_CODE_HASH');
     const ctTokenHashType = requiredEnv('CT_TOKEN_TYPE_HASH_TYPE') as 'data' | 'data1' | 'type';
-    const stealthLockCodeHash = requiredEnv('STEALTH_LOCK_CODE_HASH');
-    const stealthLockHashType = requiredEnv('STEALTH_LOCK_HASH_TYPE') as 'data' | 'data1' | 'type';
     const ctInfoArgs = requiredEnv('CT_INFO_TYPE_ARGS');
-
-    if (!recipientStealthArgs || !isStealthArgsHex(recipientStealthArgs)) {
-        throw new Error(
-            'mint-ct requires a 53-byte stealth-lock args hex string (0x + 106 hex chars) as the recipient argument.',
-        );
-    }
 
     const deployerLock = getDeployerLock(privateKey);
     const ctInfoScript = createCtInfoScript(ctInfoCodeHash, ctInfoHashType, ctInfoArgs);
@@ -150,7 +130,7 @@ async function main() {
 
     const ctInfoScriptHash = scriptToHash(ctInfoScript as any);
     const ctTokenScript = createCtTokenScript(ctTokenCodeHash, ctTokenHashType, ctInfoScriptHash);
-    const recipientLock = createStealthLockScript(stealthLockCodeHash, stealthLockHashType, recipientStealthArgs);
+    const recipientLock = helpers.parseAddress(recipientAddress, { config: lumosConfig.getConfig() });
 
     const indexer = getIndexer(endpoint);
     const feePayerAddress = getDeployerAddress(privateKey);

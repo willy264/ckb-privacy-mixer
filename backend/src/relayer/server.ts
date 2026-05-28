@@ -4,7 +4,7 @@ import cors from 'cors';
 import { loadRelayerConfig } from './config.js';
 import { RelayerWallet } from './wallet.js';
 import { submitRelay, type RelayRequest } from './relay.js';
-import { performLiveDeposit } from '../deposit/service.js';
+import { fetchFinalizedDepositNote, performLiveDeposit } from '../deposit/service.js';
 import {
     CoordinatorHttpError,
     fetchCoordinatorDepositPools,
@@ -55,6 +55,15 @@ export function createRelayerApp() {
 
             const result = await performLiveDeposit(walletAddress);
             res.status(201).json(result);
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.get('/deposit/pools/:poolId/participants/:participantId/note', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await fetchFinalizedDepositNote(req.params.poolId, req.params.participantId);
+            res.json(result);
         } catch (err) {
             next(err);
         }

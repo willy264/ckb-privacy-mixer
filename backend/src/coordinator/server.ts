@@ -14,6 +14,7 @@ import {
 } from './pool.js';
 import {
     cancelDepositParticipant,
+    attachDepositParticipantSignature,
     getDepositPool,
     getLatestDepositPool,
     listDepositPools,
@@ -21,6 +22,7 @@ import {
     registerDepositCommitment,
     summarizeDepositPool,
 } from './deposit-pool.js';
+import { buildUnsignedDepositFinalization, finalizeSignedDepositRound } from './deposit-finalizer.js';
 import { buildCoinJoinTransaction, recordSignature, broadcastCoinJoin } from './session.js';
 import { logger } from '../utils/logger.js';
 
@@ -86,6 +88,11 @@ const registerDepositSchema = z.object({
     depositTxHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'Must be a valid tx hash'),
     inputOutPoint: z.string().regex(/^0x[0-9a-fA-F]{64}:0x[0-9a-fA-F]+$/, 'Must be a txHash:index outpoint'),
     noteCreatedAt: z.coerce.number().int().positive(),
+});
+
+const signDepositSchema = z.object({
+    participantId: z.string().uuid(),
+    signaturePayload: z.string(),
 });
 
 export function createCoordinatorServer() {
@@ -218,6 +225,92 @@ export function createCoordinatorServer() {
             }
 
             res.json({ ok: true, pool: summarizeDepositPool(pool) });
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.get('/deposit/pools/:poolId/participants/:participantId', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const pool = await getDepositPool(req.params.poolId);
+            if (!pool) {
+                res.status(404).json({ error: 'Deposit pool not found' });
+                return;
+            }
+
+            const participant = pool.participants.find(entry => entry.participantId === req.params.participantId);
+            if (!participant) {
+                res.status(404).json({ error: 'Deposit participant not found' });
+                return;
+            }
+
+            res.json({
+                participantId: participant.participantId,
+                walletAddress: participant.walletAddress,
+                stealthOutputAddress: participant.stealthOutputAddress,
+                status: participant.status,
+                inputOutPoint: participant.inputOutPoint,
+                depositTxHash: participant.depositTxHash,
+                finalTxHash: participant.finalTxHash,
+                blindingFactor: participant.blindingFactor,
+                noteCreatedAt: participant.noteCreatedAt,
+                finalOutputIndex: participant.finalOutputIndex,
+            });
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.get('/deposit/pools/:poolId/unsigned-tx', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const round = await buildUnsignedDepositFinalization(req.params.poolId);
+            res.json(round);
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.post('/deposit/pools/:poolId/sign', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const parsed = signDepositSchema.parse(req.body);
+            let pool = await attachDepositParticipantSignature(req.params.poolId, parsed.participantId, parsed.signaturePayload);
+            if (!pool) {
+                res.status(404).json({ error: 'Deposit pool not found' });
+                return;
+            }
+
+            const registeredCount = pool.participants.filter(entry => entry.status === 'registered').length;
+            if (registeredCount >= pool.targetParticipants) {
+                try {
+                    const finalized = await finalizeSignedDepositRound(req.params.poolId, {});
+                    pool = await getDepositPool(req.params.poolId) ?? pool;
+                    res.json({
+                        ok: true,
+                        finalized: true,
+                        txHash: finalized.txHash,
+                        pool: summarizeDepositPool(pool),
+                    });
+                    return;
+                } catch (error) {
+                    logger.error('[Coordinator] Deposit finalization failed', { poolId: req.params.poolId, error: String(error) });
+                    throw error;
+                }
+            }
+
+            res.json({
+                ok: true,
+                finalized: false,
+                pool: summarizeDepositPool(pool),
+            });
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.post('/deposit/pools/:poolId/finalize', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await finalizeSignedDepositRound(req.params.poolId, {});
+            res.json(result);
         } catch (err) {
             next(err);
         }

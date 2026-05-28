@@ -11,9 +11,9 @@ The repo now treats the root `src/` Vite app as legacy and unsupported. New prod
 ## Current Product Boundary
 
 - Supported denomination: `100 CT`
-- Deposit path: canonical note preparation and preview/demo session coordination
-- Withdrawal path: browser-side Groth16 proof generation plus preview/live transaction assembly
-- Live withdrawal authority: by default the nullifier registry is operator-controlled, so the connected JoyID wallet must own that registry lock for browser-side broadcast
+- Deposit path: backend-driven live CT minting on Pudge with coordinator-backed deposit pool/session state
+- Withdrawal path: browser-side Groth16 proof generation plus live transaction assembly
+- Live withdrawal authority: runtime-configurable, with coordinator/relayer submission intended as the default production path
 
 ## Tooling
 
@@ -28,17 +28,17 @@ The repo now treats the root `src/` Vite app as legacy and unsupported. New prod
 
 Copy `.env.example` to `.env` and fill the deployment pointers. The frontend will treat runtime as:
 
-- `preview` when contracts are configured but live registry pointers are incomplete
 - `live` when the nullifier registry is configured
 - `disabled` when the required contract references are missing
 
 Important env values:
 
-- `MIXER_RUNTIME_MODE=preview|live|disabled`
+- `MIXER_RUNTIME_MODE=live|disabled`
 - `MIXER_WITHDRAWAL_AUTHORITY=operator-registry-lock|self-custodied|coordinator`
-- `NULLIFIER_REGISTRY_*` for live withdrawal preview/broadcast
+- `NULLIFIER_REGISTRY_*` for live withdrawal preparation/broadcast
+- `DEPOSIT_POOL_TARGET_PARTICIPANTS` for coordinator-backed deposit pool sizing
 
 ## Notes
 
 - The repo already contains Groth16 artifacts under `circuits/`.
-- A true Aggron end-to-end deposit coordinator and real CT input sourcing are still separate work; the current deposit flow is a structured preview/demo path rather than a full on-chain multi-party coordinator.
+- The active deposit flow is a real live CT mint path, but it is still not a fully shared multi-party on-chain deposit settlement transaction.

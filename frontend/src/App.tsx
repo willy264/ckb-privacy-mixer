@@ -12,14 +12,16 @@ import {
   Copy
 } from "lucide-react";
 import { connect, initConfig } from "@joyid/ckb";
+import { signRawTransaction } from "@joyid/ckb";
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import {
   broadcastPreparedWithdrawal,
   prepareVaultWithdrawal,
   relayWithdrawal,
   type PreparedVaultWithdrawal,
+  ensureJoyIdCellDep,
 } from "./withdrawal";
-import { fetchLatestDepositPool, fetchRelayerInfo, submitLiveDeposit, type DepositSessionSnapshot, type RelayerInfo } from "./relayer";
+import { fetchFinalizedDepositNote, fetchLatestDepositPool, fetchRelayerInfo, fetchUnsignedDepositRound, submitDepositSignature, submitLiveDeposit, type DepositSessionSnapshot, type RelayerInfo } from "./relayer";
 import {
   getNoteId,
   getNotesFromVault,
@@ -71,6 +73,34 @@ function getExplorerTxUrl(txHash: string): string {
   return isMainnet
     ? `https://explorer.nervos.org/transaction/${txHash}`
     : `https://pudge.explorer.nervos.org/transaction/${txHash}`;
+}
+
+async function pollForFinalizedDepositNote(poolId: string, participantId: string, timeoutMs = 5 * 60 * 1000) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const result = await fetchFinalizedDepositNote(poolId, participantId);
+    if (result.status === "finalized" && result.note) {
+      return result.note as DepositNote;
+    }
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+
+  throw new Error("Deposit is still pending finalization. Try again after more participants join the pool.");
+}
+
+async function waitForPoolReady(poolId: string, denomination: number, timeoutMs = 5 * 60 * 1000) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const pool = await fetchLatestDepositPool(denomination).catch(() => null);
+    if (pool?.sessionId === poolId && (pool.status === "ready" || pool.status === "finalizing" || pool.status === "complete")) {
+      return pool;
+    }
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+
+  throw new Error("Pool did not reach the signing stage before the timeout.");
 }
 
 export default function App() {
@@ -157,16 +187,60 @@ export default function App() {
 
     try {
       const result = await submitLiveDeposit(walletAddress);
-      await saveNoteToVault(result.note as DepositNote);
-      const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
-      setVaultNotes(refreshedNotes);
       const refreshedPool = await fetchLatestDepositPool(Number(selectedPool)).catch(() => null);
       setLatestDepositPool(refreshedPool);
+      if (result.status === "finalized" && result.note) {
+        await saveNoteToVault(result.note as DepositNote);
+        const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
+        setVaultNotes(refreshedNotes);
+        setStatusBanner({
+          tone: "success",
+          text: `Deposit finalized! Round tx ${result.mintTxHash.slice(0, 12)}... note added to your vault.`,
+        });
+      } else {
+        if (result.participantId) {
+          setStatusBanner({
+            tone: "info",
+            text: `Deposit minted and registered. Waiting for pool finalization in session ${result.sessionId.slice(0, 8)}...`,
+          });
 
-      setStatusBanner({
-        tone: "success",
-        text: `Deposit successful! Mint tx ${result.mintTxHash.slice(0, 12)}... added a live note to your vault.`,
-      });
+          const readyPool = await waitForPoolReady(result.sessionId, Number(selectedPool));
+          setLatestDepositPool(readyPool);
+
+          if (readyPool.status === "ready" || readyPool.status === "finalizing" || readyPool.status === "complete") {
+            const unsignedRound = await fetchUnsignedDepositRound(result.sessionId);
+            const participant = unsignedRound.participants.find(entry => entry.participantId === result.participantId);
+            if (!participant) {
+              throw new Error("This participant is not present in the unsigned deposit round.");
+            }
+
+            const unsignedTransaction = ensureJoyIdCellDep(unsignedRound.rawTransaction as any);
+            const signedTransaction = await signRawTransaction(unsignedTransaction as any, walletAddress);
+            const signaturePayload = JSON.stringify({
+              witnesses: (signedTransaction as any).witnesses || [],
+              cellDeps: (signedTransaction as any).cellDeps || [],
+            });
+
+            await submitDepositSignature(result.sessionId, result.participantId, signaturePayload);
+          }
+
+          const finalizedNote = await pollForFinalizedDepositNote(result.sessionId, result.participantId);
+          await saveNoteToVault(finalizedNote);
+          const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
+          setVaultNotes(refreshedNotes);
+          const latestPoolAfterFinalize = await fetchLatestDepositPool(Number(selectedPool)).catch(() => null);
+          setLatestDepositPool(latestPoolAfterFinalize);
+          setStatusBanner({
+            tone: "success",
+            text: `Deposit finalized! Your mixed note is now available in the vault.`,
+          });
+          return;
+        }
+        setStatusBanner({
+          tone: "info",
+          text: `Deposit minted and registered. Pool ${result.sessionId.slice(0, 8)}... is waiting for more participants before issuing finalized notes.`,
+        });
+      }
     } catch (error) {
       setStatusBanner({
         tone: "error",

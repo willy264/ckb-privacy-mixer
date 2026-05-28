@@ -50,7 +50,14 @@ export function createCtInfoTypeArgs(firstInput: any, outputIndex: bigint | numb
     const hasher = blake2b(32, null, null, PERSONAL);
     hasher.update(payload);
     const digest = hasher.digest('hex');
-    return `0x${digest}`;
+    const args = `0x${digest}`;
+
+    const argsBytes = Buffer.from(args.slice(2), 'hex');
+    if (argsBytes.byteLength !== 32) {
+        throw new Error(`ct-info type args must be exactly 32 bytes, got ${argsBytes.byteLength}`);
+    }
+
+    return args;
 }
 
 export async function buildGenesisCtInfoTransaction(params: {
@@ -93,6 +100,16 @@ export async function buildGenesisCtInfoTransaction(params: {
         supplyCap: params.supplyCap ?? 0n,
         flags: params.flags ?? MINTABLE,
     });
+
+    const typeArgsBytes = Buffer.from(typeArgs.slice(2), 'hex');
+    if (typeArgsBytes.byteLength !== 32) {
+        throw new Error(`ct-info genesis args must be 32 bytes, got ${typeArgsBytes.byteLength}`);
+    }
+
+    const dataBytes = Buffer.from(data.slice(2), 'hex');
+    if (dataBytes.byteLength !== CT_INFO_DATA_SIZE) {
+        throw new Error(`ct-info genesis data must be ${CT_INFO_DATA_SIZE} bytes, got ${dataBytes.byteLength}`);
+    }
 
     txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
         outputs.update(outputs.size - 1, (cell: any) => ({

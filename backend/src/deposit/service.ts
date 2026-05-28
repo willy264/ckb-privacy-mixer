@@ -6,6 +6,8 @@ import { generateStealthAddress } from 'mixer-sdk/dist/utils/stealth.js';
 import { buildMintedCtNote } from './note.js';
 import {
     cancelCoordinatorDepositParticipant,
+    fetchCoordinatorDepositParticipant,
+    fetchCoordinatorDepositSession,
     prepareCoordinatorDepositParticipant,
     registerCoordinatorDepositCommitment,
 } from '../coordinator/client.js';
@@ -13,11 +15,13 @@ import {
 const execAsync = promisify(exec);
 
 export interface LiveDepositResult {
-    note: Awaited<ReturnType<typeof buildMintedCtNote>>;
+    status: 'pending' | 'finalized';
+    note?: Awaited<ReturnType<typeof buildMintedCtNote>>;
     mintTxHash: string;
     stealthArgs: string;
     sessionId: string;
     inputOutPoint: string;
+    participantId?: string;
 }
 
 function extractKeyValue(stdout: string, key: string) {
@@ -36,7 +40,7 @@ export async function performLiveDeposit(recipientWalletAddress: string): Promis
         stealthOutputAddress: stealthArgs,
     });
     const repoRoot = path.resolve(process.cwd(), '..');
-    const command = `pnpm --filter ckb-mixer-backend exec tsx src/deposit/mint-ct.ts ${stealthArgs}`;
+    const command = `pnpm --filter ckb-mixer-backend exec tsx src/deposit/mint-ct.ts ${recipientWalletAddress}`;
     let stdout = '';
     let stderr = '';
 
@@ -75,27 +79,62 @@ export async function performLiveDeposit(recipientWalletAddress: string): Promis
         noteCreatedAt: createdAt,
     });
 
-    const note = await buildMintedCtNote({
-        sessionId: poolMembership.sessionId,
-        inputOutPoint,
-        blindingFactor,
-        stealthOutputAddress: stealthArgs,
-        commitment,
-        depositTxHash: mintTxHash,
-    });
-    note.sessionCommitments = poolMembership.commitments as any;
-    note.leafIndex = poolMembership.leafIndex;
-    note.createdAt = poolMembership.noteCreatedAt;
-    note.registrySnapshot = {
-        ...(note.registrySnapshot ?? {}),
-        size: poolMembership.pool.size,
-    };
-
     return {
-        note,
+        status: 'pending',
         mintTxHash,
         stealthArgs,
         sessionId: poolMembership.sessionId,
         inputOutPoint,
+        participantId: prepared.participant.participantId,
     };
+}
+
+export async function fetchFinalizedDepositNote(poolId: string, participantId: string) {
+    const [session, participant] = await Promise.all([
+        fetchCoordinatorDepositSession(poolId),
+        fetchCoordinatorDepositParticipant(poolId, participantId),
+    ]);
+
+    if (session.status !== 'complete') {
+        return {
+            status: session.status,
+            session,
+            participant,
+        } as const;
+    }
+
+    if (!participant.inputOutPoint || !participant.blindingFactor || !participant.depositTxHash) {
+        throw new Error(`Participant ${participantId} is missing finalized deposit metadata.`);
+    }
+
+    const leafIndex = participant.finalOutputIndex ?? 0;
+    const commitment = leafIndex >= 0 ? session.commitments[leafIndex] : session.commitments[0];
+    const mixedTxHash = participant.finalTxHash ?? participant.depositTxHash;
+    const mixedOutPoint = mixedTxHash && participant.finalOutputIndex !== undefined
+        ? `${mixedTxHash}:${`0x${participant.finalOutputIndex.toString(16)}`}`
+        : participant.inputOutPoint;
+
+    const note = await buildMintedCtNote({
+        sessionId: poolId,
+        inputOutPoint: mixedOutPoint,
+        blindingFactor: participant.blindingFactor,
+        stealthOutputAddress: participant.stealthOutputAddress,
+        commitment,
+        depositTxHash: mixedTxHash,
+    });
+
+    note.sessionCommitments = session.commitments as any;
+    note.leafIndex = leafIndex >= 0 ? leafIndex : 0;
+    note.createdAt = participant.noteCreatedAt ?? Date.now();
+    note.registrySnapshot = {
+        ...(note.registrySnapshot ?? {}),
+        size: session.size,
+    };
+
+    return {
+        status: 'finalized',
+        note,
+        session,
+        participant,
+    } as const;
 }

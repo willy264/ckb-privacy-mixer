@@ -25,10 +25,11 @@ export interface CoordinatorDepositPoolSummary {
 }
 
 interface CoordinatorPreparedParticipant {
+    poolId?: string;
     participantId: string;
     walletAddress: string;
     stealthOutputAddress: string;
-    status: 'pending' | 'registered' | 'cancelled';
+    status: 'pending' | 'minted' | 'registered' | 'finalized' | 'cancelled';
 }
 
 function getCoordinatorUrl() {
@@ -124,4 +125,50 @@ export async function fetchCoordinatorDepositPools() {
 export async function fetchLatestCoordinatorDepositPool(denomination: number) {
     const response = await fetch(`${getCoordinatorUrl()}/deposit/pools/latest/${denomination}`);
     return parseJson<CoordinatorDepositPoolSummary>(response);
+}
+
+export async function fetchCoordinatorDepositParticipant(poolId: string, participantId: string) {
+    const response = await fetch(`${getCoordinatorUrl()}/deposit/pools/${encodeURIComponent(poolId)}/participants/${encodeURIComponent(participantId)}`);
+    return parseJson<{
+        participantId: string;
+        walletAddress: string;
+        stealthOutputAddress: string;
+        status: 'pending' | 'minted' | 'registered' | 'finalized' | 'cancelled';
+        inputOutPoint?: string;
+        depositTxHash?: string;
+        finalTxHash?: string;
+        blindingFactor?: string;
+        noteCreatedAt?: number;
+        finalOutputIndex?: number;
+    }>(response);
+}
+
+export async function fetchUnsignedCoordinatorDepositRound(poolId: string) {
+    const response = await fetch(`${getCoordinatorUrl()}/deposit/pools/${encodeURIComponent(poolId)}/unsigned-tx`);
+    return parseJson<{
+        pool: CoordinatorDepositPoolSummary;
+        participants: Array<{
+            participantId: string;
+            walletAddress: string;
+            inputOutPoint: string;
+            stealthOutputAddress: string;
+        }>;
+        rawTransaction: unknown;
+        outputIndexByParticipantId: Record<string, number>;
+    }>(response);
+}
+
+export async function submitCoordinatorDepositSignature(poolId: string, participantId: string, signaturePayload: string) {
+    const response = await fetch(`${getCoordinatorUrl()}/deposit/pools/${encodeURIComponent(poolId)}/sign`, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify({ participantId, signaturePayload }),
+    });
+
+    return parseJson<{
+        ok: true;
+        pool: CoordinatorDepositPoolSummary;
+    }>(response);
 }

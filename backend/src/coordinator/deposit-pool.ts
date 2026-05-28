@@ -4,7 +4,7 @@ import path from 'path';
 import { logger } from '../utils/logger.js';
 import { redis } from '../utils/redis.js';
 
-export type DepositParticipantStatus = 'pending' | 'registered' | 'cancelled';
+export type DepositParticipantStatus = 'pending' | 'minted' | 'registered' | 'finalized' | 'cancelled';
 export type DepositPoolStatus = 'open' | 'ready' | 'finalizing' | 'complete' | 'failed';
 
 export interface DepositPoolParticipant {
@@ -14,9 +14,13 @@ export interface DepositPoolParticipant {
     commitment?: string;
     blindingFactor?: string;
     depositTxHash?: string;
+    finalTxHash?: string;
     inputOutPoint?: string;
     noteCreatedAt?: number;
+    signature?: string;
+    signaturePayload?: string;
     cancelReason?: string;
+    finalOutputIndex?: number;
     joinedAt: number;
     status: DepositParticipantStatus;
 }
@@ -232,7 +236,7 @@ export async function prepareDepositParticipant(
 
 function collectRegisteredCommitments(pool: DepositPool) {
     return pool.participants
-        .filter(entry => entry.status === 'registered' && entry.commitment)
+        .filter(entry => (entry.status === 'registered' || entry.status === 'finalized') && entry.commitment)
         .map(entry => entry.commitment!);
 }
 
@@ -298,24 +302,84 @@ export async function registerDepositCommitment(
     participant.depositTxHash = data.depositTxHash;
     participant.inputOutPoint = data.inputOutPoint;
     participant.noteCreatedAt = data.noteCreatedAt;
-    participant.status = 'registered';
+    participant.status = 'minted';
     pool.updatedAt = now();
 
-    const registeredCount = pool.participants.filter(entry => entry.status === 'registered').length;
-    if (registeredCount >= pool.targetParticipants) {
-        await finalizeDepositPool(pool);
-    } else {
-        await savePool(pool);
+    const mintedCount = pool.participants.filter(entry => entry.status === 'minted').length;
+    if (mintedCount >= pool.targetParticipants) {
+        pool.status = 'ready';
     }
+    await savePool(pool);
 
     return {
         poolId: pool.poolId,
-        commitments: collectRegisteredCommitments(pool),
+        commitments: pool.participants
+            .filter(entry => entry.status === 'minted' && entry.commitment)
+            .map(entry => entry.commitment!),
         leafIndex: pool.participants
-            .filter(entry => entry.status === 'registered' && entry.commitment)
+            .filter(entry => entry.status === 'minted' && entry.commitment)
             .findIndex(commitmentEntry => commitmentEntry.participantId === participantId),
         noteCreatedAt: participant.noteCreatedAt ?? participant.joinedAt,
     };
+}
+
+export async function attachDepositParticipantSignature(poolId: string, participantId: string, signature: string) {
+    const pool = await loadPool(poolId);
+    if (!pool) {
+        throw new Error(`Deposit pool not found: ${poolId}`);
+    }
+
+    const participant = pool.participants.find(entry => entry.participantId === participantId);
+    if (!participant) {
+        throw new Error(`Deposit participant not found: ${participantId}`);
+    }
+
+    participant.signature = signature;
+    participant.status = 'registered';
+    pool.updatedAt = now();
+    await savePool(pool);
+
+    return pool;
+}
+
+export async function markDepositPoolFinalized(
+    poolId: string,
+    finalizedCommitments: string[],
+    outputIndexByParticipantId: Record<string, number>,
+    finalTxHash?: string,
+) {
+    const pool = await loadPool(poolId);
+    if (!pool) {
+        throw new Error(`Deposit pool not found: ${poolId}`);
+    }
+
+    pool.status = 'finalizing';
+    pool.updatedAt = now();
+    await savePool(pool);
+
+    pool.finalizedCommitments = finalizedCommitments;
+    pool.finalizedAt = now();
+    pool.status = 'complete';
+    pool.updatedAt = now();
+
+    for (const participant of pool.participants) {
+        if (participant.status === 'registered') {
+            participant.status = 'finalized';
+        }
+        participant.finalOutputIndex = outputIndexByParticipantId[participant.participantId];
+        participant.finalTxHash = finalTxHash;
+    }
+
+    await savePool(pool);
+
+    const successor = (await loadPoolsForDenomination(pool.denomination)).find(candidate =>
+        candidate.status === 'open' && candidate.poolId !== pool.poolId,
+    );
+    if (!successor) {
+        await createDepositPool(BigInt(pool.denomination), pool.targetParticipants);
+    }
+
+    return pool;
 }
 
 export async function cancelDepositParticipant(poolId: string, participantId: string, reason?: string) {

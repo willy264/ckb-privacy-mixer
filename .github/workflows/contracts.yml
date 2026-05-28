@@ -1,0 +1,43 @@
+name: Contracts and Backend
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust-and-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: riscv64imac-unknown-none-elf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Regenerate Groth16 verification key
+        run: pnpm exec tsx scripts/generate-vk-rs.ts
+
+      - name: Ensure vk.rs is up to date
+        run: git diff --exit-code contracts/zk-membership-type/src/vk.rs
+
+      - name: Build mixer-sdk
+        run: pnpm --filter mixer-sdk build
+
+      - name: Build backend
+        run: pnpm --filter ckb-mixer-backend build
+
+      - name: Run contract tests
+        run: cargo test --locked -p tests -j 1

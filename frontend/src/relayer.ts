@@ -29,11 +29,13 @@ export interface RelayJobResult {
 }
 
 export interface DepositJobResult {
-    note: unknown;
+    status: 'pending' | 'finalized';
+    note?: unknown;
     mintTxHash: string;
     stealthArgs: string;
     sessionId: string;
     inputOutPoint: string;
+    participantId?: string;
 }
 
 export interface DepositSessionSnapshot {
@@ -173,6 +175,66 @@ export async function fetchDepositPools(
 
     return body as DepositSessionSnapshot[];
 }
+
+export async function fetchFinalizedDepositNote(
+    poolId: string,
+    participantId: string,
+    endpoint = getRelayerUrl(),
+): Promise<{
+    status: 'pending' | 'open' | 'ready' | 'finalizing' | 'complete' | 'failed' | 'finalized';
+    note?: unknown;
+}> {
+    const res = await fetch(`${endpoint}/deposit/pools/${encodeURIComponent(poolId)}/participants/${encodeURIComponent(participantId)}/note`);
+    const body = (await res.json().catch(() => ({ error: 'Empty response from finalized deposit note endpoint' }))) as
+        | { status: 'pending' | 'open' | 'ready' | 'finalizing' | 'complete' | 'failed' | 'finalized'; note?: unknown }
+        | { error: string };
+
+    if (!res.ok) {
+        throw new Error(('error' in body ? body.error : null) ?? `Finalized deposit note lookup failed: HTTP ${res.status}`);
+    }
+
+    return body as { status: 'pending' | 'open' | 'ready' | 'finalizing' | 'complete' | 'failed' | 'finalized'; note?: unknown };
+}
+
+export async function fetchUnsignedDepositRound(
+    poolId: string,
+    endpoint = getRelayerUrl(),
+): Promise<{
+    pool: DepositSessionSnapshot;
+    participants: Array<{
+        participantId: string;
+        walletAddress: string;
+        inputOutPoint: string;
+        stealthOutputAddress: string;
+    }>;
+    rawTransaction: any;
+    outputIndexByParticipantId: Record<string, number>;
+}> {
+    const res = await fetch(`${endpoint.replace(':4000', ':4001')}/deposit/pools/${encodeURIComponent(poolId)}/unsigned-tx`);
+    const body = await res.json().catch(() => ({ error: 'Empty response from unsigned deposit round endpoint' }));
+    if (!res.ok) {
+        throw new Error((body as any)?.error ?? `Unsigned deposit round lookup failed: HTTP ${res.status}`);
+    }
+    return body as any;
+}
+
+export async function submitDepositSignature(
+    poolId: string,
+    participantId: string,
+    signaturePayload: string,
+    endpoint = getRelayerUrl(),
+): Promise<void> {
+    const res = await fetch(`${endpoint.replace(':4000', ':4001')}/deposit/pools/${encodeURIComponent(poolId)}/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantId, signaturePayload }),
+    });
+    const body = await res.json().catch(() => ({ error: 'Empty response from deposit sign endpoint' }));
+    if (!res.ok) {
+        throw new Error((body as any)?.error ?? `Deposit signature submission failed: HTTP ${res.status}`);
+    }
+}
+
 
 /**
  * Poll the relayer until the withdrawal is broadcast or fails.
