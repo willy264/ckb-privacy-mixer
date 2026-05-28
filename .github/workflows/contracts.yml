@@ -17,6 +17,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: riscv64imac-unknown-none-elf
+          components: rust-src
 
       - uses: pnpm/action-setup@v4
         with:
