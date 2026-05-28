@@ -104,8 +104,8 @@ export class CoordinatorClient {
     }
 }
 
-import { deriveCommitment, randomBlindingFactor } from 'mixer-sdk';
-import type { DepositResult } from 'mixer-sdk';
+import { deriveCommitment, randomBlindingFactor } from '../../mixer-sdk/dist/index.js';
+import type { DepositResult } from '../../mixer-sdk/dist/index.js';
 import { signRawTransaction } from '@joyid/ckb';
 import { ensureJoyIdCellDep } from './withdrawal';
 

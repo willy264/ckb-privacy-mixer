@@ -8,7 +8,7 @@ import {
   type CkbTransaction,
   type LocalWithdrawalProofResult,
   type WithdrawalTransaction,
-} from 'mixer-sdk';
+} from '../../mixer-sdk/dist/index.js';
 import { getGroth16ArtifactUrls, tryLoadFrontendRuntimeConfig } from './runtime';
 import { fetchDepositSession } from './relayer';
 import type { DepositNote, WithdrawalMode } from './vault';

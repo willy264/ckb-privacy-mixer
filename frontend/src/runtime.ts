@@ -1,4 +1,4 @@
-import { loadMixerRuntimeConfig, type MixerRuntimeConfig } from 'mixer-sdk';
+import { loadMixerRuntimeConfig, type MixerRuntimeConfig } from '../../mixer-sdk/dist/index.js';
 
 type EnvRecord = Record<string, string | undefined>;
 
