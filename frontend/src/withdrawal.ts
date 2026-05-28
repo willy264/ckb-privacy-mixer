@@ -47,6 +47,10 @@ async function hydrateSessionCommitments(note: DepositNote) {
     return localCommitments;
   }
 
+  if (!note.sessionId.includes('-') && !note.sessionId.startsWith('pudge_ct_pool_')) {
+    return localCommitments;
+  }
+
   try {
     const remote = await fetchDepositSession(note.sessionId);
     if (remote.commitments.length > 0 && remote.commitments.includes(note.commitment!)) {

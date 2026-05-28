@@ -82,6 +82,7 @@ export default function App() {
   const [broadcastBusyId, setBroadcastBusyId] = useState<string | null>(null);
   const [preparedWithdrawals, setPreparedWithdrawals] = useState<Record<string, WithdrawalPreview>>({});
   const [statusBanner, setStatusBanner] = useState<StatusBanner | null>(null);
+  const [depositBusy, setDepositBusy] = useState(false);
   const [depositFlowInfo] = useState<DepositFlowInfo>({
     kind: "backend-ct-mint",
     description: "Backend-driven live CT mint on Pudge using stealth-lock outputs and saved vault notes.",
@@ -151,24 +152,16 @@ export default function App() {
       return;
     }
 
-    setStatusBanner({ tone: "info", text: "Minting a live CT deposit note on Pudge..." });
+    setDepositBusy(true);
+    setStatusBanner({ tone: "info", text: "Minting a live CT deposit note on Pudge. This usually takes about 60-90 seconds while the backend waits for on-chain confirmation." });
 
     try {
       const result = await submitLiveDeposit(walletAddress);
       await saveNoteToVault(result.note as DepositNote);
-      setVaultNotes(getNotesFromVault());
-      setLatestDepositPool({
-        sessionId: result.sessionId,
-        denomination: selectedPool,
-        commitments: (result.note as DepositNote).sessionCommitments ?? [],
-        size: (result.note as DepositNote).sessionCommitments?.length ?? 1,
-        participantCount: (result.note as DepositNote).sessionCommitments?.length ?? 1,
-        pendingCount: 0,
-        registeredCount: (result.note as DepositNote).sessionCommitments?.length ?? 1,
-        updatedAt: Date.now(),
-        status: ((result.note as DepositNote).sessionCommitments?.length ?? 1) >= 5 ? "complete" : "open",
-        targetSize: 5,
-      });
+      const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
+      setVaultNotes(refreshedNotes);
+      const refreshedPool = await fetchLatestDepositPool(Number(selectedPool)).catch(() => null);
+      setLatestDepositPool(refreshedPool);
 
       setStatusBanner({
         tone: "success",
@@ -179,6 +172,8 @@ export default function App() {
         tone: "error",
         text: error instanceof Error ? error.message : "Deposit failed.",
       });
+    } finally {
+      setDepositBusy(false);
     }
   };
 
@@ -519,10 +514,15 @@ export default function App() {
                     <button
                       className="w-full py-4 rounded-lg bg-gradient-to-r from-[#00f2ff] to-[#00a2ff] text-black font-orbitron font-bold text-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                       onClick={() => void startMixing()}
-                      disabled={!currentPool.available && false}
+                      disabled={depositBusy || !currentPool.available}
                     >
-                      Deposit
+                      {depositBusy ? "Minting..." : "Deposit"}
                     </button>
+                    {depositBusy && (
+                      <div className="mt-3 text-xs text-sky-100/80">
+                        Waiting for the backend to mint and confirm your CT output on Pudge. Please keep this tab open.
+                      </div>
+                    )}
                 </motion.div>
               </AnimatePresence>
             ) : (

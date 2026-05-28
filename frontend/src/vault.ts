@@ -212,6 +212,10 @@ export async function refreshVaultNotesFromSession(existingNotes?: DepositNote[]
       continue;
     }
 
+    if (!note.sessionId.includes('-') && !note.sessionId.startsWith('pudge_ct_pool_')) {
+      continue;
+    }
+
     try {
       const remote = await fetchDepositSession(note.sessionId);
       if (!remote.commitments.includes(note.commitment)) {

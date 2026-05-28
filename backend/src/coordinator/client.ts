@@ -1,5 +1,15 @@
 import '../env.js';
 
+export class CoordinatorHttpError extends Error {
+    constructor(
+        message: string,
+        public readonly status: number,
+    ) {
+        super(message);
+        this.name = 'CoordinatorHttpError';
+    }
+}
+
 export interface CoordinatorDepositPoolSummary {
     sessionId: string;
     denomination: number;
@@ -34,7 +44,10 @@ function getCoordinatorUrl() {
 async function parseJson<T>(response: Response): Promise<T> {
     const body = await response.json().catch(() => ({ error: 'Empty coordinator response' }));
     if (!response.ok) {
-        throw new Error((body as any)?.error ?? `Coordinator request failed: HTTP ${response.status}`);
+        throw new CoordinatorHttpError(
+            (body as any)?.error ?? `Coordinator request failed: HTTP ${response.status}`,
+            response.status,
+        );
     }
     return body as T;
 }

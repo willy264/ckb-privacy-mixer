@@ -6,6 +6,7 @@ import { RelayerWallet } from './wallet.js';
 import { submitRelay, type RelayRequest } from './relay.js';
 import { performLiveDeposit } from '../deposit/service.js';
 import {
+    CoordinatorHttpError,
     fetchCoordinatorDepositPools,
     fetchCoordinatorDepositSession,
     fetchLatestCoordinatorDepositPool,
@@ -64,6 +65,10 @@ export function createRelayerApp() {
             const pool = await fetchCoordinatorDepositSession(req.params.sessionId);
             res.json(pool);
         } catch (err) {
+            if (err instanceof CoordinatorHttpError && err.status === 404) {
+                res.status(404).json({ error: err.message });
+                return;
+            }
             next(err);
         }
     });
@@ -88,6 +93,10 @@ export function createRelayerApp() {
             const pool = await fetchLatestCoordinatorDepositPool(denomination);
             res.json(pool);
         } catch (err) {
+            if (err instanceof CoordinatorHttpError && err.status === 404) {
+                res.status(404).json({ error: err.message });
+                return;
+            }
             next(err);
         }
     });
@@ -122,14 +131,17 @@ export function createRelayerApp() {
     app.get('/health', async (_req: Request, res: Response) => {
         try {
             const balance = await wallet.getBalanceShannnons();
-            // Count active jobs by scanning keys (for demo purposes)
-            // In a production app, we'd use a dedicated set or counter for active jobs
-            const jobKeys = await redis.keys('job:*');
+            let activeJobs = 0;
+            if (redis.status === 'ready') {
+                const jobKeys = await redis.keys('job:*');
+                activeJobs = jobKeys.length;
+            }
             res.json({
                 status: 'ok',
                 relayerAddress: wallet.getAddress(),
                 balanceCKB: (Number(balance) / 1e8).toFixed(4),
-                activeJobs: jobKeys.length,
+                activeJobs,
+                redis: redis.status === 'ready' ? 'connected' : 'fallback',
             });
         } catch {
             res.status(503).json({ status: 'degraded', reason: 'Cannot reach CKB node' });
