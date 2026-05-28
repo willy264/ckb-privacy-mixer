@@ -13,6 +13,7 @@ import {
 } from '../coordinator/client.js';
 
 const execAsync = promisify(exec);
+let depositMintQueue = Promise.resolve();
 
 export interface LiveDepositResult {
     status: 'pending' | 'finalized';
@@ -32,6 +33,54 @@ function extractKeyValue(stdout: string, key: string) {
     return match[1].trim();
 }
 
+function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isTransientMintConflict(message: string) {
+    const normalized = message.toLowerCase();
+    return normalized.includes('poolrejectedrbf')
+        || normalized.includes('rbf rejected')
+        || normalized.includes('already in pool')
+        || normalized.includes('transaction') && normalized.includes('was rejected by the node');
+}
+
+async function runMintCommandSerially(command: string, repoRoot: string) {
+    const previous = depositMintQueue;
+    let release!: () => void;
+    depositMintQueue = new Promise<void>(resolve => {
+        release = resolve;
+    });
+
+    await previous;
+    try {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+            try {
+                return await execAsync(
+                    command,
+                    {
+                        cwd: repoRoot,
+                        env: process.env,
+                        shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/sh',
+                    },
+                );
+            } catch (error) {
+                lastError = error;
+                const message = error instanceof Error ? error.message : String(error);
+                if (!isTransientMintConflict(message) || attempt === 3) {
+                    throw error;
+                }
+                await sleep(4000 * attempt);
+            }
+        }
+
+        throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    } finally {
+        release();
+    }
+}
+
 export async function performLiveDeposit(recipientWalletAddress: string): Promise<LiveDepositResult> {
     const stealthArgs = generateStealthAddress(recipientWalletAddress);
     const prepared = await prepareCoordinatorDepositParticipant({
@@ -45,14 +94,7 @@ export async function performLiveDeposit(recipientWalletAddress: string): Promis
     let stderr = '';
 
     try {
-        const result = await execAsync(
-            command,
-            {
-                cwd: repoRoot,
-                env: process.env,
-                shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/sh',
-            },
-        );
+        const result = await runMintCommandSerially(command, repoRoot);
         stdout = result.stdout;
         stderr = result.stderr;
     } catch (error) {
