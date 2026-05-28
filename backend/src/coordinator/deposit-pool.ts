@@ -39,7 +39,7 @@ export interface DepositPool {
 }
 
 const DEPOSIT_POOL_TIMEOUT_MS = 30 * 60 * 1000;
-const DEFAULT_TARGET_PARTICIPANTS = Number.parseInt(process.env.DEPOSIT_POOL_TARGET_PARTICIPANTS ?? '5', 10);
+const DEFAULT_TARGET_PARTICIPANTS = Number.parseInt(process.env.DEPOSIT_POOL_TARGET_PARTICIPANTS ?? '4', 10);
 const POOL_KEY_PREFIX = 'deposit_pool:';
 const DENOMINATION_INDEX_PREFIX = 'deposit_pool_denominator:';
 const FILE_STORE_NAME = 'coordinator-deposit-pools.json';

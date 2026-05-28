@@ -21,7 +21,7 @@ import {
   type PreparedVaultWithdrawal,
   ensureJoyIdCellDep,
 } from "./withdrawal";
-import { fetchFinalizedDepositNote, fetchLatestDepositPool, fetchRelayerInfo, fetchUnsignedDepositRound, submitDepositSignature, submitLiveDeposit, type DepositSessionSnapshot, type RelayerInfo } from "./relayer";
+import { fetchDepositParticipantState, fetchFinalizedDepositNote, fetchLatestDepositPool, fetchRelayerInfo, fetchUnsignedDepositRound, submitDepositSignature, submitLiveDeposit, type DepositParticipantSnapshot, type DepositSessionSnapshot, type RelayerInfo } from "./relayer";
 import {
   getNoteId,
   getNotesFromVault,
@@ -50,6 +50,39 @@ interface StatusBanner {
   text: string;
 }
 
+type DepositStage =
+  | "idle"
+  | "connecting-wallet"
+  | "preparing-session"
+  | "minting"
+  | "waiting-threshold"
+  | "ready-to-sign"
+  | "signing"
+  | "signature-submitted"
+  | "finalizing"
+  | "finalized"
+  | "error";
+
+interface PendingDepositTracker {
+  sessionId: string;
+  participantId: string;
+  walletAddress: string;
+  denomination: number;
+  stage: DepositStage;
+  message: string;
+  updatedAt: number;
+}
+
+const PENDING_DEPOSIT_KEY = "obscell_pending_deposit_round";
+
+const DEPOSIT_TIMELINE: Array<{ key: string; label: string }> = [
+  { key: "mint", label: "Mint CT staging output" },
+  { key: "threshold", label: "Wait for pool threshold" },
+  { key: "sign", label: "Sign shared round with JoyID" },
+  { key: "finalize", label: "Coordinator finalization" },
+  { key: "note", label: "Save finalized note to vault" },
+];
+
 interface DepositFlowInfo {
   kind: "backend-ct-mint";
   description: string;
@@ -73,6 +106,77 @@ function getExplorerTxUrl(txHash: string): string {
   return isMainnet
     ? `https://explorer.nervos.org/transaction/${txHash}`
     : `https://pudge.explorer.nervos.org/transaction/${txHash}`;
+}
+
+function loadPendingDepositTracker(): PendingDepositTracker | null {
+  try {
+    const raw = localStorage.getItem(PENDING_DEPOSIT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingDepositTracker;
+    if (!parsed?.sessionId || !parsed?.participantId || !parsed?.walletAddress) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistPendingDepositTracker(tracker: PendingDepositTracker | null) {
+  if (!tracker) {
+    localStorage.removeItem(PENDING_DEPOSIT_KEY);
+    return;
+  }
+  localStorage.setItem(PENDING_DEPOSIT_KEY, JSON.stringify(tracker));
+}
+
+function getDepositTimelineIndex(stage: DepositStage): number {
+  switch (stage) {
+    case "connecting-wallet":
+    case "preparing-session":
+    case "minting":
+      return 0;
+    case "waiting-threshold":
+      return 1;
+    case "ready-to-sign":
+    case "signing":
+      return 2;
+    case "signature-submitted":
+    case "finalizing":
+      return 3;
+    case "finalized":
+      return 4;
+    case "error":
+      return 1;
+    case "idle":
+    default:
+      return 0;
+  }
+}
+
+function getDepositStageHint(stage: DepositStage): string {
+  if (stage === "connecting-wallet") {
+    return "JoyID wallet connection is required before the backend can begin the deposit round.";
+  }
+  if (stage === "preparing-session") {
+    return "The coordinator is preparing your participant slot before the CT mint begins.";
+  }
+  if (stage === "waiting-threshold") {
+    return "No JoyID signing happens yet. The round must fill before the shared transaction can be signed.";
+  }
+  if (stage === "ready-to-sign" || stage === "signing") {
+    return "A JoyID signature prompt is expected during this stage.";
+  }
+  if (stage === "signature-submitted" || stage === "finalizing") {
+    return "Your signature has been submitted. The coordinator is now assembling or finalizing the shared round.";
+  }
+  if (stage === "finalized") {
+    return "The mixed note has been finalized and should now be saved in your vault.";
+  }
+  if (stage === "error") {
+    return "Use Manual Refresh or Resume Pending Round after more participants join or the coordinator state advances.";
+  }
+  return "The deposit flow is starting.";
 }
 
 async function pollForFinalizedDepositNote(poolId: string, participantId: string, timeoutMs = 5 * 60 * 1000) {
@@ -103,6 +207,59 @@ async function waitForPoolReady(poolId: string, denomination: number, timeoutMs 
   throw new Error("Pool did not reach the signing stage before the timeout.");
 }
 
+async function runPendingDepositFlow(
+  tracker: PendingDepositTracker,
+  walletAddress: string,
+  onProgress: (next: PendingDepositTracker) => void,
+): Promise<DepositNote> {
+  const update = (stage: DepositStage, message: string) => {
+    const next = {
+      ...tracker,
+      stage,
+      message,
+      updatedAt: Date.now(),
+    };
+    tracker = next;
+    onProgress(next);
+    return next;
+  };
+
+  update("waiting-threshold", "Deposit minted. Waiting for the pool threshold before signing can begin.");
+
+  const readyPool = await waitForPoolReady(tracker.sessionId, tracker.denomination);
+  if (readyPool.status === "complete") {
+    update("finalizing", "Pool already completed. Fetching your finalized note.");
+    return pollForFinalizedDepositNote(tracker.sessionId, tracker.participantId);
+  }
+
+  update("ready-to-sign", "Pool is ready. Preparing the unsigned shared round for your signature.");
+  const unsignedRound = await fetchUnsignedDepositRound(tracker.sessionId);
+  const participant = unsignedRound.participants.find(entry => entry.participantId === tracker.participantId);
+  if (!participant) {
+    throw new Error("This participant is not present in the unsigned deposit round.");
+  }
+
+  update("signing", "JoyID signature required. Please approve the shared deposit round transaction.");
+  const unsignedTransaction = ensureJoyIdCellDep(unsignedRound.rawTransaction as any);
+  const signedTransaction = await signRawTransaction(unsignedTransaction as any, walletAddress);
+  const signaturePayload = JSON.stringify({
+    witnesses: (signedTransaction as any).witnesses || [],
+    cellDeps: (signedTransaction as any).cellDeps || [],
+  });
+
+  update("signature-submitted", "Submitting your round signature to the coordinator.");
+  await submitDepositSignature(tracker.sessionId, tracker.participantId, signaturePayload);
+
+  const participantState = await fetchDepositParticipantState(tracker.sessionId, tracker.participantId).catch(() => null as DepositParticipantSnapshot | null);
+  if (participantState?.status === "finalized") {
+    update("finalizing", "Round finalized. Fetching your mixed note.");
+  } else {
+    update("finalizing", "Signature accepted. Waiting for the coordinator to finalize the round.");
+  }
+
+  return pollForFinalizedDepositNote(tracker.sessionId, tracker.participantId);
+}
+
 export default function App() {
   const [selectedPool, setSelectedPool] = useState<Denomination>(100);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -122,6 +279,7 @@ export default function App() {
   const [relayerInfo, setRelayerInfo] = useState<RelayerInfo | null>(null);
   const [runtimeStatus] = useState(() => tryLoadFrontendRuntimeConfig());
   const [withdrawNoteString, setWithdrawNoteString] = useState("");
+  const [pendingDeposit, setPendingDeposit] = useState<PendingDepositTracker | null>(() => loadPendingDepositTracker());
 
   const runtimeMode = runtimeStatus.mode;
   const runtimeReady = runtimeStatus.config?.runtimeMode === "live" && !!runtimeStatus.config?.nullifierRegistry;
@@ -159,6 +317,10 @@ export default function App() {
     void fetchLatestDepositPool(100).then(setLatestDepositPool).catch(() => setLatestDepositPool(null));
   }, []);
 
+  useEffect(() => {
+    persistPendingDepositTracker(pendingDeposit);
+  }, [pendingDeposit]);
+
   const handleConnect = async () => {
     try {
       const connection = await connect();
@@ -178,14 +340,42 @@ export default function App() {
 
   const startMixing = async () => {
     if (!walletAddress) {
-      handleConnect();
+      setPendingDeposit({
+        sessionId: "pending",
+        participantId: "pending",
+        walletAddress: "pending",
+        denomination: Number(selectedPool),
+        stage: "connecting-wallet",
+        message: "Connecting JoyID wallet before starting the deposit round.",
+        updatedAt: Date.now(),
+      });
+      await handleConnect();
       return;
     }
 
     setDepositBusy(true);
-    setStatusBanner({ tone: "info", text: "Minting a live CT deposit note on Pudge. This usually takes about 60-90 seconds while the backend waits for on-chain confirmation." });
+    setPendingDeposit(null);
+    setPendingDeposit({
+      sessionId: "preparing",
+      participantId: "preparing",
+      walletAddress,
+      denomination: Number(selectedPool),
+      stage: "preparing-session",
+      message: "Preparing your participant slot with the coordinator before the CT mint starts.",
+      updatedAt: Date.now(),
+    });
+    setStatusBanner({ tone: "info", text: "Preparing the deposit round with the coordinator, then minting a live CT deposit note on Pudge. This can take about 60-90 seconds." });
 
     try {
+      setPendingDeposit({
+        sessionId: "minting",
+        participantId: "minting",
+        walletAddress,
+        denomination: Number(selectedPool),
+        stage: "minting",
+        message: "Coordinator slot reserved. Waiting for the backend CT mint and on-chain confirmation.",
+        updatedAt: Date.now(),
+      });
       const result = await submitLiveDeposit(walletAddress);
       const refreshedPool = await fetchLatestDepositPool(Number(selectedPool)).catch(() => null);
       setLatestDepositPool(refreshedPool);
@@ -193,43 +383,46 @@ export default function App() {
         await saveNoteToVault(result.note as DepositNote);
         const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
         setVaultNotes(refreshedNotes);
+        setPendingDeposit(null);
         setStatusBanner({
           tone: "success",
           text: `Deposit finalized! Round tx ${result.mintTxHash.slice(0, 12)}... note added to your vault.`,
         });
       } else {
         if (result.participantId) {
+          const tracker: PendingDepositTracker = {
+            sessionId: result.sessionId,
+            participantId: result.participantId,
+            walletAddress,
+            denomination: Number(selectedPool),
+            stage: "waiting-threshold",
+            message: `Deposit minted and registered in session ${result.sessionId.slice(0, 8)}. Waiting for more participants.`,
+            updatedAt: Date.now(),
+          };
+          setPendingDeposit(tracker);
           setStatusBanner({
             tone: "info",
-            text: `Deposit minted and registered. Waiting for pool finalization in session ${result.sessionId.slice(0, 8)}...`,
+            text: tracker.message,
           });
 
-          const readyPool = await waitForPoolReady(result.sessionId, Number(selectedPool));
-          setLatestDepositPool(readyPool);
-
-          if (readyPool.status === "ready" || readyPool.status === "finalizing" || readyPool.status === "complete") {
-            const unsignedRound = await fetchUnsignedDepositRound(result.sessionId);
-            const participant = unsignedRound.participants.find(entry => entry.participantId === result.participantId);
-            if (!participant) {
-              throw new Error("This participant is not present in the unsigned deposit round.");
-            }
-
-            const unsignedTransaction = ensureJoyIdCellDep(unsignedRound.rawTransaction as any);
-            const signedTransaction = await signRawTransaction(unsignedTransaction as any, walletAddress);
-            const signaturePayload = JSON.stringify({
-              witnesses: (signedTransaction as any).witnesses || [],
-              cellDeps: (signedTransaction as any).cellDeps || [],
-            });
-
-            await submitDepositSignature(result.sessionId, result.participantId, signaturePayload);
-          }
-
-          const finalizedNote = await pollForFinalizedDepositNote(result.sessionId, result.participantId);
+          const finalizedNote = await runPendingDepositFlow(
+            tracker,
+            walletAddress,
+            progress => {
+              setPendingDeposit(progress);
+              const tone: BannerTone = progress.stage === "error" ? "error" : progress.stage === "finalized" ? "success" : "info";
+              setStatusBanner({
+                tone,
+                text: progress.message,
+              });
+            },
+          );
           await saveNoteToVault(finalizedNote);
           const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
           setVaultNotes(refreshedNotes);
           const latestPoolAfterFinalize = await fetchLatestDepositPool(Number(selectedPool)).catch(() => null);
           setLatestDepositPool(latestPoolAfterFinalize);
+          setPendingDeposit(null);
           setStatusBanner({
             tone: "success",
             text: `Deposit finalized! Your mixed note is now available in the vault.`,
@@ -246,9 +439,121 @@ export default function App() {
         tone: "error",
         text: error instanceof Error ? error.message : "Deposit failed.",
       });
+      setPendingDeposit(prev => prev ? { ...prev, stage: "error", message: error instanceof Error ? error.message : "Deposit failed.", updatedAt: Date.now() } : prev);
     } finally {
       setDepositBusy(false);
     }
+  };
+
+  const handleRefreshDepositProgress = async () => {
+    if (!pendingDeposit || !walletAddress || pendingDeposit.sessionId === "preparing" || pendingDeposit.sessionId === "minting" || pendingDeposit.sessionId === "pending") {
+      setStatusBanner({ tone: "info", text: "There is no pending deposit session to refresh right now." });
+      return;
+    }
+
+    setDepositBusy(true);
+    try {
+      const latestPool = await fetchLatestDepositPool(pendingDeposit.denomination).catch(() => null);
+      if (latestPool) {
+        setLatestDepositPool(latestPool);
+      }
+
+      const participantState = await fetchDepositParticipantState(pendingDeposit.sessionId, pendingDeposit.participantId).catch(() => null as DepositParticipantSnapshot | null);
+      if (participantState) {
+        const nextStage: DepositStage =
+          participantState.status === "finalized"
+            ? "finalizing"
+            : latestPool?.status === "ready"
+              ? "ready-to-sign"
+              : latestPool?.status === "finalizing" || latestPool?.status === "complete"
+                ? "finalizing"
+                : latestPool?.status === "failed"
+                  ? "error"
+                  : "waiting-threshold";
+
+        const nextMessage =
+          participantState.status === "finalized"
+            ? "Coordinator marks your participant as finalized. Fetching your note."
+            : latestPool?.status === "ready"
+              ? "Pool is ready. JoyID signing should begin on this refresh."
+              : latestPool?.status === "finalizing"
+                ? "Round is finalizing. Waiting for your mixed note."
+                : latestPool?.status === "complete"
+                  ? "Round completed. Fetching your finalized note."
+                  : latestPool?.status === "failed"
+                    ? "The current pool failed. Retry or start a new deposit round."
+                    : latestPool
+                      ? `Pool still waiting for more participants (${latestPool.size}/${latestPool.targetSize}).`
+                      : pendingDeposit.message;
+
+        setPendingDeposit(prev => prev ? { ...prev, stage: nextStage, message: nextMessage, updatedAt: Date.now() } : prev);
+      }
+
+      const finalized = await fetchFinalizedDepositNote(pendingDeposit.sessionId, pendingDeposit.participantId).catch(() => null);
+      if (finalized?.status === "finalized" && finalized.note) {
+        await saveNoteToVault(finalized.note as DepositNote);
+        const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
+        setVaultNotes(refreshedNotes);
+        setPendingDeposit(null);
+        setStatusBanner({ tone: "success", text: "Deposit finalized and note saved to the vault." });
+        return;
+      }
+
+      const note = await runPendingDepositFlow(
+        pendingDeposit,
+        walletAddress,
+        progress => {
+          setPendingDeposit(progress);
+          const tone: BannerTone = progress.stage === "error" ? "error" : progress.stage === "finalized" ? "success" : "info";
+          setStatusBanner({ tone, text: progress.message });
+        },
+      );
+
+      await saveNoteToVault(note);
+      const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
+      setVaultNotes(refreshedNotes);
+      setPendingDeposit(null);
+      setStatusBanner({ tone: "success", text: "Deposit finalized and note saved to the vault." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to refresh deposit progress.";
+      setPendingDeposit(prev => prev ? { ...prev, stage: "error", message, updatedAt: Date.now() } : prev);
+      setStatusBanner({ tone: "error", text: message });
+    } finally {
+      setDepositBusy(false);
+    }
+  };
+
+  const handleResumePendingDepositRound = async () => {
+    if (!pendingDeposit || pendingDeposit.sessionId === "preparing" || pendingDeposit.sessionId === "minting" || pendingDeposit.sessionId === "pending") {
+      setStatusBanner({ tone: "info", text: "There is no pending deposit round to resume." });
+      return;
+    }
+
+    if (!walletAddress) {
+      setStatusBanner({ tone: "info", text: "Connect the same JoyID wallet used for the pending deposit before resuming." });
+      return;
+    }
+
+    if (walletAddress !== pendingDeposit.walletAddress) {
+      setStatusBanner({
+        tone: "error",
+        text: `Pending deposit belongs to ${pendingDeposit.walletAddress.slice(0, 6)}...${pendingDeposit.walletAddress.slice(-4)}. Connect that wallet to continue.`,
+      });
+      return;
+    }
+
+    await handleRefreshDepositProgress();
+  };
+
+  const handleRefreshPoolOnly = async () => {
+    const refreshedPool = await fetchLatestDepositPool(Number(selectedPool)).catch(() => null);
+    setLatestDepositPool(refreshedPool);
+    setStatusBanner({
+      tone: "info",
+      text: refreshedPool
+        ? `Pool refreshed: ${refreshedPool.size}/${refreshedPool.targetSize} participants, status ${refreshedPool.status}.`
+        : "Unable to refresh live pool state right now.",
+    });
   };
 
   const handlePrepareWithdrawal = async (note: DepositNote) => {
@@ -583,6 +888,71 @@ export default function App() {
                         Registered: {latestDepositPool.registeredCount} | Pending: {latestDepositPool.pendingCount}
                       </div>
                     )}
+                    {pendingDeposit && (
+                      <div className="mt-3 rounded-md border border-sky-300/20 bg-sky-400/5 px-3 py-3 text-xs text-sky-100/85">
+                        <div className="font-semibold text-sky-200">Deposit progress</div>
+                        {!(pendingDeposit.sessionId === "preparing" || pendingDeposit.sessionId === "minting" || pendingDeposit.sessionId === "pending") && (
+                          <>
+                            <div className="mt-1">Session: {pendingDeposit.sessionId}</div>
+                            <div>Participant: {pendingDeposit.participantId}</div>
+                          </>
+                        )}
+                        <div>Stage: {pendingDeposit.stage}</div>
+                        <div className="mt-1">{pendingDeposit.message}</div>
+                        <div className="mt-1 text-sky-100/70">{getDepositStageHint(pendingDeposit.stage)}</div>
+                        <div className="mt-3 space-y-2">
+                          {DEPOSIT_TIMELINE.map((entry, index) => {
+                            const activeIndex = getDepositTimelineIndex(pendingDeposit.stage);
+                            const complete = index < activeIndex || pendingDeposit.stage === "finalized";
+                            const current = index === activeIndex && pendingDeposit.stage !== "finalized";
+
+                            return (
+                              <div key={entry.key} className="flex items-center gap-2">
+                                <div
+                                  className={`h-2.5 w-2.5 rounded-full ${
+                                    complete
+                                      ? "bg-emerald-300"
+                                      : current
+                                        ? "bg-sky-300 ring-2 ring-sky-300/30"
+                                        : "bg-white/20"
+                                  }`}
+                                />
+                                <span className={`${complete ? "text-emerald-100" : current ? "text-sky-100" : "text-white/50"}`}>
+                                  {entry.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleRefreshDepositProgress()}
+                            disabled={depositBusy}
+                            className="rounded border border-sky-300/30 px-2 py-1 text-[11px] font-semibold text-sky-100 transition-colors hover:bg-sky-400/10 disabled:opacity-50"
+                          >
+                            Manual Refresh
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleResumePendingDepositRound()}
+                            disabled={depositBusy}
+                            className="rounded border border-sky-300/30 px-2 py-1 text-[11px] font-semibold text-sky-100 transition-colors hover:bg-sky-400/10 disabled:opacity-50"
+                          >
+                            Resume Pending Round
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleRefreshPoolOnly()}
+                        className="rounded border border-sky-300/20 px-2 py-1 text-[11px] font-semibold text-sky-100/85 transition-colors hover:bg-sky-400/10"
+                      >
+                        Refresh Pool State
+                      </button>
+                    </div>
                   </div>
 
                     <button

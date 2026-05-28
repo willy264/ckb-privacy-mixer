@@ -52,9 +52,26 @@ export interface DepositSessionSnapshot {
     finalizedAt?: number;
 }
 
+export interface DepositParticipantSnapshot {
+    participantId: string;
+    walletAddress: string;
+    stealthOutputAddress: string;
+    status: 'pending' | 'minted' | 'registered' | 'finalized' | 'cancelled';
+    inputOutPoint?: string;
+    depositTxHash?: string;
+    finalTxHash?: string;
+    finalOutputIndex?: number;
+    signaturePayload?: string;
+    noteCreatedAt?: number;
+}
+
 /** Read the relayer URL from Vite env, defaulting to localhost for dev. */
 export function getRelayerUrl(): string {
     return (import.meta as any).env?.VITE_RELAYER_URL ?? 'http://localhost:4000';
+}
+
+function getCoordinatorUrl(endpoint = getRelayerUrl()): string {
+    return endpoint.replace(':4000', ':4001').replace('http://', 'http://').replace('https://', 'https://');
 }
 
 /**
@@ -210,12 +227,25 @@ export async function fetchUnsignedDepositRound(
     rawTransaction: any;
     outputIndexByParticipantId: Record<string, number>;
 }> {
-    const res = await fetch(`${endpoint.replace(':4000', ':4001')}/deposit/pools/${encodeURIComponent(poolId)}/unsigned-tx`);
+    const res = await fetch(`${getCoordinatorUrl(endpoint)}/deposit/pools/${encodeURIComponent(poolId)}/unsigned-tx`);
     const body = await res.json().catch(() => ({ error: 'Empty response from unsigned deposit round endpoint' }));
     if (!res.ok) {
         throw new Error((body as any)?.error ?? `Unsigned deposit round lookup failed: HTTP ${res.status}`);
     }
     return body as any;
+}
+
+export async function fetchDepositParticipantState(
+    poolId: string,
+    participantId: string,
+    endpoint = getRelayerUrl(),
+): Promise<DepositParticipantSnapshot> {
+    const res = await fetch(`${getCoordinatorUrl(endpoint)}/deposit/pools/${encodeURIComponent(poolId)}/participants/${encodeURIComponent(participantId)}`);
+    const body = await res.json().catch(() => ({ error: 'Empty response from deposit participant endpoint' }));
+    if (!res.ok) {
+        throw new Error((body as any)?.error ?? `Deposit participant lookup failed: HTTP ${res.status}`);
+    }
+    return body as DepositParticipantSnapshot;
 }
 
 export async function submitDepositSignature(
@@ -224,7 +254,7 @@ export async function submitDepositSignature(
     signaturePayload: string,
     endpoint = getRelayerUrl(),
 ): Promise<void> {
-    const res = await fetch(`${endpoint.replace(':4000', ':4001')}/deposit/pools/${encodeURIComponent(poolId)}/sign`, {
+    const res = await fetch(`${getCoordinatorUrl(endpoint)}/deposit/pools/${encodeURIComponent(poolId)}/sign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId, signaturePayload }),

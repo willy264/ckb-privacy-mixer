@@ -37,6 +37,7 @@ Important env values:
 - `MIXER_WITHDRAWAL_AUTHORITY=direct|operator-registry-lock|self-custodied|coordinator`
 - `NULLIFIER_REGISTRY_*` for live withdrawal preparation/broadcast
 - `DEPOSIT_POOL_TARGET_PARTICIPANTS` for coordinator-backed deposit pool sizing
+  - use a power-of-two participant count for the current CT round helper path
 
 ## Notes
 
