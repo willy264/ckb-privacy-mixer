@@ -31,7 +31,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Regenerate Groth16 verification key
-        run: pnpm exec tsx scripts/generate-vk-rs.ts
+        run: pnpm --filter ckb-mixer-backend exec tsx ../scripts/generate-vk-rs.ts
 
       - name: Ensure vk.rs is up to date
         run: git diff --exit-code contracts/zk-membership-type/src/vk.rs
