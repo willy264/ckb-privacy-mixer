@@ -315,6 +315,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bulletproofs"
+version = "5.0.1"
+source = "git+https://github.com/zkcrypto/bulletproofs#04bce4e66013ff857ed462fd4206210544101461"
+dependencies = [
+ "byteorder",
+ "clear_on_drop",
+ "curve25519-dalek",
+ "digest",
+ "group",
+ "merlin",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_derive",
+ "sha3",
+ "subtle",
+ "thiserror",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -855,7 +875,19 @@ dependencies = [
 name = "ct-mint-helper"
 version = "0.1.0"
 dependencies = [
- "bulletproofs",
+ "bulletproofs 5.0.1 (git+https://github.com/zkcrypto/bulletproofs?rev=04bce4e66013ff857ed462fd4206210544101461)",
+ "curve25519-dalek",
+ "merlin",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ct-round-helper"
+version = "0.1.0"
+dependencies = [
+ "bulletproofs 5.0.1 (git+https://github.com/zkcrypto/bulletproofs)",
  "curve25519-dalek",
  "merlin",
  "rand_core 0.6.4",
@@ -1480,7 +1512,7 @@ dependencies = [
 name = "mixer-pool-type"
 version = "0.1.0"
 dependencies = [
- "bulletproofs",
+ "bulletproofs 5.0.1 (git+https://github.com/zkcrypto/bulletproofs?rev=04bce4e66013ff857ed462fd4206210544101461)",
  "ckb-std",
  "curve25519-dalek",
  "merlin",
@@ -2176,7 +2208,7 @@ dependencies = [
 name = "tests"
 version = "0.1.0"
 dependencies = [
- "bulletproofs",
+ "bulletproofs 5.0.1 (git+https://github.com/zkcrypto/bulletproofs?rev=04bce4e66013ff857ed462fd4206210544101461)",
  "ckb-testtool",
  "curve25519-dalek",
  "serde",
