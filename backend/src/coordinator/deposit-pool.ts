@@ -43,9 +43,16 @@ const DEFAULT_TARGET_PARTICIPANTS = Number.parseInt(process.env.DEPOSIT_POOL_TAR
 const POOL_KEY_PREFIX = 'deposit_pool:';
 const DENOMINATION_INDEX_PREFIX = 'deposit_pool_denominator:';
 const FILE_STORE_NAME = 'coordinator-deposit-pools.json';
+let poolMutationQueue = Promise.resolve();
 
 function now() {
     return Date.now();
+}
+
+function withPoolMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const run = poolMutationQueue.then(operation, operation);
+    poolMutationQueue = run.then(() => undefined, () => undefined);
+    return run;
 }
 
 function getPoolKey(poolId: string) {
@@ -186,7 +193,7 @@ async function pruneExpiredDepositPools() {
     }
 }
 
-export async function createDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
+async function createDepositPoolUnsafe(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
     const timestamp = now();
     const pool: DepositPool = {
         poolId: crypto.randomUUID(),
@@ -206,7 +213,11 @@ export async function createDepositPool(denomination: bigint, targetParticipants
     return pool;
 }
 
-export async function findOrCreateDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
+export async function createDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
+    return withPoolMutation(() => createDepositPoolUnsafe(denomination, targetParticipants));
+}
+
+async function findOrCreateDepositPoolUnsafe(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
     await pruneExpiredDepositPools();
     const pools = await loadPoolsForDenomination(denomination.toString());
     const open = pools.find(pool =>
@@ -216,7 +227,11 @@ export async function findOrCreateDepositPool(denomination: bigint, targetPartic
     if (open) {
         return open;
     }
-    return createDepositPool(denomination, targetParticipants);
+    return createDepositPoolUnsafe(denomination, targetParticipants);
+}
+
+export async function findOrCreateDepositPool(denomination: bigint, targetParticipants = DEFAULT_TARGET_PARTICIPANTS) {
+    return withPoolMutation(() => findOrCreateDepositPoolUnsafe(denomination, targetParticipants));
 }
 
 export async function prepareDepositParticipant(
@@ -224,27 +239,29 @@ export async function prepareDepositParticipant(
     walletAddress: string,
     stealthOutputAddress: string,
 ) {
-    const pool = await findOrCreateDepositPool(denomination);
-    const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
-    if (activeCount >= pool.targetParticipants) {
-        throw new Error(`Deposit pool ${pool.poolId} is already full. Please retry against the next open pool.`);
-    }
-    const participant: DepositPoolParticipant = {
-        participantId: crypto.randomUUID(),
-        walletAddress,
-        stealthOutputAddress,
-        joinedAt: now(),
-        status: 'pending',
-    };
-    pool.participants.push(participant);
-    pool.updatedAt = now();
-    await savePool(pool);
-    logger.info('[DepositPool] Participant prepared', {
-        poolId: pool.poolId,
-        participantId: participant.participantId,
-        count: `${pool.participants.length}/${pool.targetParticipants}`,
+    return withPoolMutation(async () => {
+        const pool = await findOrCreateDepositPoolUnsafe(denomination);
+        const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
+        if (activeCount >= pool.targetParticipants) {
+            throw new Error(`Deposit pool ${pool.poolId} is already full. Please retry against the next open pool.`);
+        }
+        const participant: DepositPoolParticipant = {
+            participantId: crypto.randomUUID(),
+            walletAddress,
+            stealthOutputAddress,
+            joinedAt: now(),
+            status: 'pending',
+        };
+        pool.participants.push(participant);
+        pool.updatedAt = now();
+        await savePool(pool);
+        logger.info('[DepositPool] Participant prepared', {
+            poolId: pool.poolId,
+            participantId: participant.participantId,
+            count: `${pool.participants.length}/${pool.targetParticipants}`,
+        });
+        return { pool, participant };
     });
-    return { pool, participant };
 }
 
 function collectRegisteredCommitments(pool: DepositPool) {
@@ -300,60 +317,64 @@ export async function registerDepositCommitment(
         noteCreatedAt: number;
     },
 ) {
-    const pool = await loadPool(poolId);
-    if (!pool) {
-        throw new Error(`Deposit pool not found: ${poolId}`);
-    }
+    return withPoolMutation(async () => {
+        const pool = await loadPool(poolId);
+        if (!pool) {
+            throw new Error(`Deposit pool not found: ${poolId}`);
+        }
 
-    const participant = pool.participants.find(entry => entry.participantId === participantId);
-    if (!participant) {
-        throw new Error(`Deposit participant not found: ${participantId}`);
-    }
+        const participant = pool.participants.find(entry => entry.participantId === participantId);
+        if (!participant) {
+            throw new Error(`Deposit participant not found: ${participantId}`);
+        }
 
-    participant.commitment = data.commitment;
-    participant.blindingFactor = data.blindingFactor;
-    participant.depositTxHash = data.depositTxHash;
-    participant.inputOutPoint = data.inputOutPoint;
-    participant.noteCreatedAt = data.noteCreatedAt;
-    participant.status = 'minted';
-    pool.updatedAt = now();
+        participant.commitment = data.commitment;
+        participant.blindingFactor = data.blindingFactor;
+        participant.depositTxHash = data.depositTxHash;
+        participant.inputOutPoint = data.inputOutPoint;
+        participant.noteCreatedAt = data.noteCreatedAt;
+        participant.status = 'minted';
+        pool.updatedAt = now();
 
-    const mintedCount = pool.participants.filter(entry => entry.status === 'minted').length;
-    if (mintedCount >= pool.targetParticipants) {
-        pool.status = 'ready';
-    }
-    await savePool(pool);
+        const mintedCount = pool.participants.filter(entry => entry.status === 'minted').length;
+        if (mintedCount >= pool.targetParticipants) {
+            pool.status = 'ready';
+        }
+        await savePool(pool);
 
-    return {
-        poolId: pool.poolId,
-        commitments: pool.participants
-            .filter(entry => entry.status === 'minted' && entry.commitment)
-            .map(entry => entry.commitment!),
-        leafIndex: pool.participants
-            .filter(entry => entry.status === 'minted' && entry.commitment)
-            .findIndex(commitmentEntry => commitmentEntry.participantId === participantId),
-        noteCreatedAt: participant.noteCreatedAt ?? participant.joinedAt,
-    };
+        return {
+            poolId: pool.poolId,
+            commitments: pool.participants
+                .filter(entry => entry.status === 'minted' && entry.commitment)
+                .map(entry => entry.commitment!),
+            leafIndex: pool.participants
+                .filter(entry => entry.status === 'minted' && entry.commitment)
+                .findIndex(commitmentEntry => commitmentEntry.participantId === participantId),
+            noteCreatedAt: participant.noteCreatedAt ?? participant.joinedAt,
+        };
+    });
 }
 
 export async function attachDepositParticipantSignature(poolId: string, participantId: string, signature: string) {
-    const pool = await loadPool(poolId);
-    if (!pool) {
-        throw new Error(`Deposit pool not found: ${poolId}`);
-    }
+    return withPoolMutation(async () => {
+        const pool = await loadPool(poolId);
+        if (!pool) {
+            throw new Error(`Deposit pool not found: ${poolId}`);
+        }
 
-    const participant = pool.participants.find(entry => entry.participantId === participantId);
-    if (!participant) {
-        throw new Error(`Deposit participant not found: ${participantId}`);
-    }
+        const participant = pool.participants.find(entry => entry.participantId === participantId);
+        if (!participant) {
+            throw new Error(`Deposit participant not found: ${participantId}`);
+        }
 
-    participant.signaturePayload = signature;
-    participant.signature = signature;
-    participant.status = 'registered';
-    pool.updatedAt = now();
-    await savePool(pool);
+        participant.signaturePayload = signature;
+        participant.signature = signature;
+        participant.status = 'registered';
+        pool.updatedAt = now();
+        await savePool(pool);
 
-    return pool;
+        return pool;
+    });
 }
 
 export async function markDepositPoolFinalized(
@@ -362,57 +383,61 @@ export async function markDepositPoolFinalized(
     outputIndexByParticipantId: Record<string, number>,
     finalTxHash?: string,
 ) {
-    const pool = await loadPool(poolId);
-    if (!pool) {
-        throw new Error(`Deposit pool not found: ${poolId}`);
-    }
-
-    pool.status = 'finalizing';
-    pool.updatedAt = now();
-    await savePool(pool);
-
-    pool.finalizedCommitments = finalizedCommitments;
-    pool.finalizedAt = now();
-    pool.status = 'complete';
-    pool.updatedAt = now();
-
-    for (const participant of pool.participants) {
-        if (participant.status === 'registered') {
-            participant.status = 'finalized';
+    return withPoolMutation(async () => {
+        const pool = await loadPool(poolId);
+        if (!pool) {
+            throw new Error(`Deposit pool not found: ${poolId}`);
         }
-        participant.finalOutputIndex = outputIndexByParticipantId[participant.participantId];
-        participant.finalTxHash = finalTxHash;
-    }
 
-    await savePool(pool);
+        pool.status = 'finalizing';
+        pool.updatedAt = now();
+        await savePool(pool);
 
-    const successor = (await loadPoolsForDenomination(pool.denomination)).find(candidate =>
-        candidate.status === 'open' && candidate.poolId !== pool.poolId,
-    );
-    if (!successor) {
-        await createDepositPool(BigInt(pool.denomination), pool.targetParticipants);
-    }
+        pool.finalizedCommitments = finalizedCommitments;
+        pool.finalizedAt = now();
+        pool.status = 'complete';
+        pool.updatedAt = now();
 
-    return pool;
+        for (const participant of pool.participants) {
+            if (participant.status === 'registered') {
+                participant.status = 'finalized';
+            }
+            participant.finalOutputIndex = outputIndexByParticipantId[participant.participantId];
+            participant.finalTxHash = finalTxHash;
+        }
+
+        await savePool(pool);
+
+        const successor = (await loadPoolsForDenomination(pool.denomination)).find(candidate =>
+            candidate.status === 'open' && candidate.poolId !== pool.poolId,
+        );
+        if (!successor) {
+            await createDepositPoolUnsafe(BigInt(pool.denomination), pool.targetParticipants);
+        }
+
+        return pool;
+    });
 }
 
 export async function cancelDepositParticipant(poolId: string, participantId: string, reason?: string) {
-    const pool = await loadPool(poolId);
-    if (!pool) {
-        throw new Error(`Deposit pool not found: ${poolId}`);
-    }
+    return withPoolMutation(async () => {
+        const pool = await loadPool(poolId);
+        if (!pool) {
+            throw new Error(`Deposit pool not found: ${poolId}`);
+        }
 
-    const participant = pool.participants.find(entry => entry.participantId === participantId);
-    if (!participant) {
-        throw new Error(`Deposit participant not found: ${participantId}`);
-    }
+        const participant = pool.participants.find(entry => entry.participantId === participantId);
+        if (!participant) {
+            throw new Error(`Deposit participant not found: ${participantId}`);
+        }
 
-    if (participant.status !== 'registered') {
-        participant.status = 'cancelled';
-        participant.cancelReason = reason;
-        pool.updatedAt = now();
-        await savePool(pool);
-    }
+        if (participant.status !== 'registered') {
+            participant.status = 'cancelled';
+            participant.cancelReason = reason;
+            pool.updatedAt = now();
+            await savePool(pool);
+        }
+    });
 }
 
 export async function getDepositPool(poolId: string) {
