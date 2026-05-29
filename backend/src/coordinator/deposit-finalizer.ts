@@ -10,6 +10,7 @@ const CKB_SHANNON = 100_000_000n;
 const MIXED_OUTPUT_CAPACITY = 224n * CKB_SHANNON;
 const STAGING_OUTPUT_CAPACITY = 300n * CKB_SHANNON;
 const CHANGE_OUTPUT_CAPACITY = STAGING_OUTPUT_CAPACITY - MIXED_OUTPUT_CAPACITY;
+const FINALIZATION_FEE_SHANNONS = 10_000n;
 const execFileAsync = promisify(execFile);
 
 interface RoundHelperOutput {
@@ -98,11 +99,19 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
     }
 
     const outputIndexByParticipantId: Record<string, number> = {};
+    const totalChangeCapacity = CHANGE_OUTPUT_CAPACITY * BigInt(shuffled.length);
+    if (totalChangeCapacity <= FINALIZATION_FEE_SHANNONS) {
+        throw new Error('Not enough staged surplus capacity to pay the finalization transaction fee.');
+    }
+    const feeAdjustedTotalChange = totalChangeCapacity - FINALIZATION_FEE_SHANNONS;
+    const baseChangePerParticipant = feeAdjustedTotalChange / BigInt(shuffled.length);
+    const remainder = feeAdjustedTotalChange % BigInt(shuffled.length);
     shuffled.forEach((participant, index) => {
+        const capacityForThisOutput = baseChangePerParticipant + (index === 0 ? remainder : 0n);
         txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
             outputs.push({
                 cellOutput: {
-                    capacity: `0x${CHANGE_OUTPUT_CAPACITY.toString(16)}`,
+                    capacity: `0x${capacityForThisOutput.toString(16)}`,
                     lock: helpers.parseAddress(participant.walletAddress, { config: lumosConfig.getConfig() }),
                 },
                 data: '0x',
