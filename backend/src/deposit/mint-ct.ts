@@ -10,8 +10,6 @@ import { createCtInfoData, parseCtInfoData } from './obscell.js';
 const execFileAsync = promisify(execFile);
 const MINT_AMOUNT = 100n;
 const CT_TOKEN_OUTPUT_CAPACITY = 300n * 100_000_000n;
-const CHANGE_CELL_MIN_CAPACITY = 61n * 100_000_000n;
-const FEE_BUFFER = CHANGE_CELL_MIN_CAPACITY + 5_000_000n;
 
 interface MintHelperOutput {
     amount: number;
@@ -60,29 +58,6 @@ async function findLiveCtInfoCell(lockScript: any, typeScript: any) {
         return cell;
     }
 
-    return null;
-}
-
-async function collectPlainFundingCells(lockScript: any, requiredCapacity: bigint) {
-    const endpoint = await resolveWorkingEndpointPair();
-    const collector = getIndexer(endpoint).collector({ lock: lockScript });
-    const selected: any[] = [];
-    let totalCapacity = 0n;
-    for await (const cell of collector.collect()) {
-        const hasType = !!cell.cellOutput.type;
-        const dataBytes = cell.data ? (cell.data.length - 2) / 2 : 0;
-        if (hasType || dataBytes > 0) {
-            continue;
-        }
-        selected.push(cell);
-        totalCapacity += BigInt(cell.cellOutput.capacity);
-        if (totalCapacity >= requiredCapacity) {
-            return {
-                cells: selected,
-                totalCapacity,
-            };
-        }
-    }
     return null;
 }
 
@@ -161,22 +136,6 @@ async function main() {
         } as any),
     );
 
-    const requiredFundingCapacity = CT_TOKEN_OUTPUT_CAPACITY + FEE_BUFFER;
-    const plainFunding = await collectPlainFundingCells(liveCtInfoCell.cell.output.lock, requiredFundingCapacity);
-    if (!plainFunding) {
-        throw new Error('No sufficient plain spendable CKB cells available to fund the mint output.');
-    }
-
-    const plainCapacity = plainFunding.totalCapacity;
-    const changeCapacity = plainCapacity - CT_TOKEN_OUTPUT_CAPACITY - FEE_BUFFER;
-    if (changeCapacity <= 0n) {
-        throw new Error('Selected plain funding cell does not contain enough capacity for the mint output plus fees.');
-    }
-
-    txSkeleton = txSkeleton.update('inputs', (inputs: any) =>
-        plainFunding.cells.reduce((acc: any, cell: any) => acc.push(cell), inputs),
-    );
-
     txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
         outputs
             .push({
@@ -194,13 +153,6 @@ async function main() {
                     type: ctTokenScript,
                 },
                 data: `${helper.commitment_hex}${'00'.repeat(32)}`.replace(/^0x0x/, '0x'),
-            } as any)
-            .push({
-                cellOutput: {
-                    capacity: `0x${changeCapacity.toString(16)}`,
-                    lock: plainFunding.cells[0].cellOutput.lock,
-                },
-                data: '0x',
             } as any),
     );
 
@@ -234,6 +186,15 @@ async function main() {
                 },
                 depType: 'code',
             }),
+    );
+
+    txSkeleton = await commons.common.injectCapacity(
+        txSkeleton,
+        [feePayerAddress],
+        CT_TOKEN_OUTPUT_CAPACITY,
+        undefined,
+        undefined,
+        { config: lumosConfig.getConfig() },
     );
 
     txSkeleton = await commons.common.payFeeByFeeRate(
