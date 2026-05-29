@@ -49,6 +49,12 @@ function now() {
     return Date.now();
 }
 
+function compactCancelledParticipants(pool: DepositPool) {
+    const before = pool.participants.length;
+    pool.participants = pool.participants.filter(entry => entry.status !== 'cancelled');
+    return before - pool.participants.length;
+}
+
 function withPoolMutation<T>(operation: () => Promise<T>): Promise<T> {
     const run = poolMutationQueue.then(operation, operation);
     poolMutationQueue = run.then(() => undefined, () => undefined);
@@ -241,6 +247,13 @@ export async function prepareDepositParticipant(
 ) {
     return withPoolMutation(async () => {
         const pool = await findOrCreateDepositPoolUnsafe(denomination);
+        const removedCancelled = compactCancelledParticipants(pool);
+        if (removedCancelled > 0) {
+            logger.info('[DepositPool] Compacted cancelled participants', {
+                poolId: pool.poolId,
+                removedCancelled,
+            });
+        }
         const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
         if (activeCount >= pool.targetParticipants) {
             throw new Error(`Deposit pool ${pool.poolId} is already full. Please retry against the next open pool.`);
@@ -255,10 +268,11 @@ export async function prepareDepositParticipant(
         pool.participants.push(participant);
         pool.updatedAt = now();
         await savePool(pool);
+        const nextActiveCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
         logger.info('[DepositPool] Participant prepared', {
             poolId: pool.poolId,
             participantId: participant.participantId,
-            count: `${pool.participants.length}/${pool.targetParticipants}`,
+            count: `${nextActiveCount}/${pool.targetParticipants}`,
         });
         return { pool, participant };
     });
@@ -434,6 +448,12 @@ export async function cancelDepositParticipant(poolId: string, participantId: st
         if (participant.status !== 'registered') {
             participant.status = 'cancelled';
             participant.cancelReason = reason;
+            logger.info('[DepositPool] Participant cancelled', {
+                poolId: pool.poolId,
+                participantId,
+                reason,
+            });
+            compactCancelledParticipants(pool);
             pool.updatedAt = now();
             await savePool(pool);
         }

@@ -12,6 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ckb-ccc/core": "^1.12.5",
+    "@ckb-ccc/joy-id": "^1.0.32",
     "@joyid/ckb": "^1.1.4",
     "framer-motion": "^10.16.4",
     "lucide-react": "^0.279.0",

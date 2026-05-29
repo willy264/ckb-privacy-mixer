@@ -14,6 +14,8 @@
     "lint": "eslint . --ext ts --max-warnings 0"
   },
   "dependencies": {
+    "@ckb-ccc/core": "^1.12.5",
+    "@ckb-ccc/joy-id": "^1.0.32",
     "@ckb-lumos/base": "^0.22.2",
     "@ckb-lumos/hd": "^0.22.2",
     "@ckb-lumos/lumos": "^0.22.2",
