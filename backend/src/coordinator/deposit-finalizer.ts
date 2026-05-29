@@ -21,6 +21,19 @@ interface RoundHelperOutput {
     range_proof_hex: string;
 }
 
+function parseSignaturePayload(signaturePayload: string) {
+    const parsed = JSON.parse(signaturePayload) as {
+        witnesses?: unknown[];
+        cellDeps?: unknown[];
+    };
+
+    if (!Array.isArray(parsed.witnesses)) {
+        throw new Error('Invalid participant signature payload: missing witnesses array.');
+    }
+
+    return parsed;
+}
+
 function buildStealthLockScript(args: string) {
     return {
         codeHash: process.env.STEALTH_LOCK_CODE_HASH!,
@@ -181,7 +194,12 @@ export async function finalizeSignedDepositRound(poolId: string, signedTransacti
         if (!participant?.signaturePayload) {
             throw new Error(`Missing signature payload for participant ${participantInfo.participantId}`);
         }
-        mergedWitnesses[i] = participant.signaturePayload;
+        const parsedPayload = parseSignaturePayload(participant.signaturePayload);
+        const signedWitness = parsedPayload.witnesses?.[i];
+        if (typeof signedWitness !== 'string' || !signedWitness.startsWith('0x')) {
+            throw new Error(`Participant ${participantInfo.participantId} did not provide a valid signed witness for input ${i}.`);
+        }
+        mergedWitnesses[i] = signedWitness;
     }
 
     const finalTransaction = {
