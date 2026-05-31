@@ -642,6 +642,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 
 [[package]]
+name = "registry-type"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -847,7 +854,6 @@ name = "zk-membership-type"
 version = "0.1.0"
 dependencies = [
  "ark-bn254",
- "ark-crypto-primitives",
  "ark-ec",
  "ark-ff",
  "ark-groth16",
@@ -855,5 +861,4 @@ dependencies = [
  "ark-snark",
  "ark-std",
  "ckb-std",
- "sha2",
 ]

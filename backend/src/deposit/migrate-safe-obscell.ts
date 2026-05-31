@@ -1,32 +1,17 @@
 import '../env.js';
 import fs from 'fs';
 import path from 'path';
-import { helpers, commons, config as lumosConfig, hd, RPC } from '@ckb-lumos/lumos';
-import { blake2b, PERSONAL, serializeInput, scriptToHash } from '@nervosnetwork/ckb-sdk-utils';
+import { ccc } from '@ckb-ccc/core';
+import { blake2b, PERSONAL, serializeInput } from '@nervosnetwork/ckb-sdk-utils';
 import {
-    buildAndSendTransaction,
-    getDeployerAddress,
-    getDeployerLock,
-    getIndexer,
-    getRpc,
-    initializePudge,
     requiredEnv,
     resolveWorkingEndpointPair,
     waitForTransaction,
-} from './lumos.js';
+} from './ccc.js';
 import { createCtInfoData, MINTABLE } from './obscell.js';
 
 const SHANNONS = 100_000_000n;
 const FEE_BUFFER = 500_000n;
-
-type OutputPlan = {
-    cellOutput: {
-        capacity: string;
-        lock: any;
-        type?: any;
-    };
-    data: string;
-};
 
 type CodeArtifact = {
     envPrefix: 'STEALTH_LOCK' | 'CT_INFO_TYPE' | 'CT_TOKEN_TYPE';
@@ -39,6 +24,7 @@ function readBinary(binaryPath: string) {
     return {
         hex: `0x${Buffer.from(bytes).toString('hex')}`,
         capacity: BigInt(bytes.length) * SHANNONS + 61n * SHANNONS,
+        codeHash: ccc.hexFrom(ccc.hashCkb(bytes)),
     };
 }
 
@@ -53,23 +39,13 @@ function createTypeIdArgs(firstInput: { previousOutput: { txHash: string; index:
     return `0x${hasher.digest('hex')}`;
 }
 
-async function fetchLiveCell(rpc: RPC, txHash: string, index: string) {
-    const liveCell = await rpc.getLiveCell({ txHash, index } as any, true);
-    if (!liveCell.cell || liveCell.status !== 'live') {
-        throw new Error(`Live cell ${txHash}:${index} not found`);
-    }
-    return liveCell as typeof liveCell & { cell: NonNullable<typeof liveCell.cell> };
-}
-
-async function buildMigrationSkeleton() {
-    initializePudge();
-    lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
+async function main() {
     const endpoint = await resolveWorkingEndpointPair();
-    const rpc = getRpc(endpoint);
-    const indexer = getIndexer(endpoint);
+    const client = new ccc.ClientPublicTestnet({ url: endpoint.rpcUrl });
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
-    const lockScript = getDeployerLock(privateKey);
-    const address = getDeployerAddress(privateKey);
+    const normalizedKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+    const signer = new ccc.SignerCkbPrivateKey(client, normalizedKey);
+    const lockScript = (await signer.getRecommendedAddressObj()).script;
 
     const currentDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
     const repoRoot = path.resolve(currentDir, '..', '..', '..');
@@ -87,201 +63,114 @@ async function buildMigrationSkeleton() {
         { txHash: requiredEnv('CT_TOKEN_TYPE_TX_HASH'), index: requiredEnv('CT_TOKEN_TYPE_INDEX') },
     ];
 
-    const liveStateCell = await fetchLiveCell(rpc, requiredEnv('CT_INFO_CELL_TX_HASH'), requiredEnv('CT_INFO_CELL_INDEX'));
-    const inputCells = [];
-    let totalInputCapacity = 0n;
-
-    for (const ref of obsoleteCodeCells) {
-        const liveCell = await fetchLiveCell(rpc, ref.txHash, ref.index);
-        inputCells.push({
-            cellOutput: liveCell.cell.output,
-            data: liveCell.cell.data.content,
-            outPoint: {
-                txHash: ref.txHash,
-                index: ref.index,
-            },
-        });
-        totalInputCapacity += BigInt(liveCell.cell.output.capacity);
+    // Fetch the live ct-info state cell
+    const ctInfoCellOutPoint = {
+        txHash: requiredEnv('CT_INFO_CELL_TX_HASH'),
+        index: requiredEnv('CT_INFO_CELL_INDEX'),
+    };
+    const liveStateCell = await client.getCell(ctInfoCellOutPoint);
+    if (!liveStateCell) {
+        throw new Error(`Live ct-info state cell not found at ${ctInfoCellOutPoint.txHash}:${ctInfoCellOutPoint.index}`);
     }
 
-    // Consume the live ct-info state cell so we can reissue it against the safe ct-info-type code hash.
-    inputCells.push({
-        cellOutput: liveStateCell.cell.output,
-        data: liveStateCell.cell.data.content,
-        outPoint: {
-            txHash: requiredEnv('CT_INFO_CELL_TX_HASH'),
-            index: requiredEnv('CT_INFO_CELL_INDEX'),
-        },
-    });
-    totalInputCapacity += BigInt(liveStateCell.cell.output.capacity);
+    const cccTx = ccc.Transaction.from({});
 
+    // Add obsolete code cells as inputs (to consume and replace them)
+    for (const ref of obsoleteCodeCells) {
+        cccTx.addInput({
+            previousOutput: {
+                txHash: ref.txHash,
+                index: ccc.numToHex(ref.index),
+            },
+            since: '0x0',
+        });
+    }
+
+    // Add ct-info state cell as input
+    cccTx.addInput({
+        previousOutput: {
+            txHash: ctInfoCellOutPoint.txHash,
+            index: ccc.numToHex(ctInfoCellOutPoint.index),
+        },
+        since: '0x0',
+    });
+
+    // Read binaries and add new code outputs
     const binaries = artifacts.map((artifact) => ({
         ...artifact,
         ...readBinary(artifact.file),
     }));
 
-    const outputPlans: OutputPlan[] = binaries.map(binary => ({
-        cellOutput: {
-            capacity: `0x${binary.capacity.toString(16)}`,
+    for (const binary of binaries) {
+        cccTx.addOutput({
+            capacity: ccc.numFrom(binary.capacity),
             lock: lockScript,
-        },
-        data: binary.hex,
-    }));
-
-    const firstInput = {
-        previousOutput: inputCells[0].outPoint,
-        since: '0x0',
-    };
-
-    const safeCtInfoBinary = binaries.find(binary => binary.envPrefix === 'CT_INFO_TYPE');
-    if (!safeCtInfoBinary) {
-        throw new Error('Missing safe ct-info-type artifact');
+        }, binary.hex);
     }
 
-    const typeArgs = createTypeIdArgs(firstInput, BigInt(outputPlans.length));
+    // Build the migrated ct-info state output
+    const firstInput = {
+        previousOutput: { txHash: obsoleteCodeCells[0].txHash, index: obsoleteCodeCells[0].index },
+        since: '0x0',
+    };
+    const typeArgs = createTypeIdArgs(firstInput, BigInt(binaries.length));
+
     const ctInfoData = createCtInfoData({
         totalSupply: 0n,
         supplyCap: BigInt(process.env.CT_INFO_SUPPLY_CAP ?? '1000000'),
         flags: MINTABLE,
     });
-    const ctInfoTypeScript = {
-        codeHash: scriptToHash({
-            codeHash: '0x',
-            hashType: 'type',
-            args: '0x',
-        } as any),
-        hashType: 'data1' as const,
-        args: typeArgs,
-    };
 
-    // Replace the temporary codeHash with the safe code hash we are about to deploy.
-    ctInfoTypeScript.codeHash = scriptToHash({
-        codeHash: safeCtInfoBinary.hex,
-        hashType: 'data',
-        args: '0x',
-    } as any);
-
-    // Use the binary hash itself as the code hash since these are code cells with type = null.
-    const safeCtInfoCodeHash = scriptToHash({
-        codeHash: '0x',
-        hashType: 'data',
-        args: '0x',
-    } as any);
-    void safeCtInfoCodeHash;
-
-    // The deployed code hash is the ckb hash of the binary.
-    const safeCtInfoDataHash = scriptToHash({
-        codeHash: safeCtInfoBinary.hex,
-        hashType: 'data',
-        args: '0x',
-    } as any);
-    void safeCtInfoDataHash;
-
-    const safeCtInfoCodeHashEnv = requiredEnv('CT_INFO_TYPE_CODE_HASH');
-    const migratedCtInfoType = {
-        codeHash: safeCtInfoCodeHashEnv,
+    const migratedCtInfoType = ccc.Script.from({
+        codeHash: requiredEnv('CT_INFO_TYPE_CODE_HASH'),
         hashType: requiredEnv('CT_INFO_TYPE_HASH_TYPE') as 'data' | 'data1' | 'type',
         args: typeArgs,
-    };
-
-    outputPlans.push({
-        cellOutput: {
-            capacity: liveStateCell.cell.output.capacity,
-            lock: liveStateCell.cell.output.lock,
-            type: migratedCtInfoType,
-        },
-        data: ctInfoData,
     });
 
-    const totalOutputCapacity = outputPlans.reduce((sum, output) => sum + BigInt(output.cellOutput.capacity), 0n);
-    const changeCapacity = totalInputCapacity - totalOutputCapacity - FEE_BUFFER;
-    if (changeCapacity < 61n * SHANNONS) {
-        throw new Error(`Not enough capacity to migrate safe obscell contracts. Missing ${(61n * SHANNONS - changeCapacity).toString()} shannons.`);
-    }
+    cccTx.addOutput({
+        capacity: ccc.numFrom(liveStateCell.cellOutput.capacity),
+        lock: liveStateCell.cellOutput.lock,
+        type: migratedCtInfoType,
+    }, ccc.hexFrom(ctInfoData));
 
-    outputPlans.push({
-        cellOutput: {
-            capacity: `0x${changeCapacity.toString(16)}`,
-            lock: lockScript,
-        },
-        data: '0x',
+    // Add secp256k1 cell dep
+    const secp = await client.getKnownScript(ccc.KnownScript.Secp256k1Blake160);
+    cccTx.addCellDeps({
+        outPoint: secp.cellDeps[0].cellDep.outPoint,
+        depType: secp.cellDeps[0].cellDep.depType,
     });
 
-    let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
-    for (const inputCell of inputCells) {
-        txSkeleton = txSkeleton.update('inputs', (inputs: any) => inputs.push(inputCell));
-    }
-    for (const output of outputPlans) {
-        txSkeleton = txSkeleton.update('outputs', (outputs: any) => outputs.push(output as any));
-    }
+    // Complete inputs for fees and handle change
+    await cccTx.completeInputsByCapacity(signer);
+    await cccTx.completeFeeBy(signer, 1000);
 
-    const secp = lumosConfig.getConfig().SCRIPTS.SECP256K1_BLAKE160!;
-    txSkeleton = txSkeleton.update('cellDeps', (cellDeps: any) =>
-        cellDeps.push({
-            outPoint: {
-                txHash: secp.TX_HASH,
-                index: secp.INDEX,
-            },
-            depType: secp.DEP_TYPE as any,
-        }),
+    const txHash = await signer.sendTransaction(cccTx);
+    await waitForTransaction(txHash);
+
+    const codeHashes = Object.fromEntries(
+        binaries.map(binary => [binary.envPrefix, binary.codeHash]),
     );
 
-    const { blockchain } = await import('@ckb-lumos/base');
-    const witnessArgs = blockchain.WitnessArgs.pack({ lock: new Uint8Array(65) });
-    const witnessPlaceholder = `0x${Array.from(new Uint8Array(witnessArgs)).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-    txSkeleton = txSkeleton.update('witnesses', (witnesses: any) => {
-        let next = witnesses.push(witnessPlaceholder);
-        for (let i = 1; i < inputCells.length; i += 1) {
-            next = next.push('0x');
-        }
-        return next;
-    });
-
-    txSkeleton = commons.common.prepareSigningEntries(txSkeleton, {
-        config: lumosConfig.getConfig(),
-    });
-
-    return {
-        txSkeleton,
-        privateKey,
-        typeArgs,
-        codeHashes: Object.fromEntries(
-            binaries.map(binary => [
-                binary.envPrefix,
-                scriptToHash({
-                    codeHash: binary.hex,
-                    hashType: 'data',
-                    args: '0x',
-                } as any),
-            ]),
-        ),
-        outputIndexes: {
-            STEALTH_LOCK: '0x0',
-            CT_INFO_TYPE: '0x1',
-            CT_TOKEN_TYPE: '0x2',
-            CT_INFO_CELL: '0x3',
-        },
+    const outputIndexes = {
+        STEALTH_LOCK: '0x0',
+        CT_INFO_TYPE: '0x1',
+        CT_TOKEN_TYPE: '0x2',
+        CT_INFO_CELL: '0x3',
     };
-}
-
-async function main() {
-    const plan = await buildMigrationSkeleton();
-    const { txHash } = await buildAndSendTransaction(plan.txSkeleton, plan.privateKey);
-    await waitForTransaction(txHash);
 
     console.log('Safe obscell migration committed.');
     console.log(`STEALTH_LOCK_TX_HASH=${txHash}`);
-    console.log(`STEALTH_LOCK_INDEX=${plan.outputIndexes.STEALTH_LOCK}`);
+    console.log(`STEALTH_LOCK_INDEX=${outputIndexes.STEALTH_LOCK}`);
     console.log(`CT_INFO_TYPE_TX_HASH=${txHash}`);
-    console.log(`CT_INFO_TYPE_INDEX=${plan.outputIndexes.CT_INFO_TYPE}`);
+    console.log(`CT_INFO_TYPE_INDEX=${outputIndexes.CT_INFO_TYPE}`);
     console.log(`CT_TOKEN_TYPE_TX_HASH=${txHash}`);
-    console.log(`CT_TOKEN_TYPE_INDEX=${plan.outputIndexes.CT_TOKEN_TYPE}`);
+    console.log(`CT_TOKEN_TYPE_INDEX=${outputIndexes.CT_TOKEN_TYPE}`);
     console.log(`CT_INFO_CELL_TX_HASH=${txHash}`);
-    console.log(`CT_INFO_CELL_INDEX=${plan.outputIndexes.CT_INFO_CELL}`);
-    console.log(`CT_INFO_TYPE_ARGS=${plan.typeArgs}`);
-    console.log(`STEALTH_LOCK_CODE_HASH=${plan.codeHashes.STEALTH_LOCK}`);
-    console.log(`CT_INFO_TYPE_CODE_HASH=${plan.codeHashes.CT_INFO_TYPE}`);
-    console.log(`CT_TOKEN_TYPE_CODE_HASH=${plan.codeHashes.CT_TOKEN_TYPE}`);
+    console.log(`CT_INFO_CELL_INDEX=${outputIndexes.CT_INFO_CELL}`);
+    console.log(`CT_INFO_TYPE_ARGS=${typeArgs}`);
+    console.log(`STEALTH_LOCK_CODE_HASH=${codeHashes.STEALTH_LOCK}`);
+    console.log(`CT_INFO_TYPE_CODE_HASH=${codeHashes.CT_INFO_TYPE}`);
+    console.log(`CT_TOKEN_TYPE_CODE_HASH=${codeHashes.CT_TOKEN_TYPE}`);
 }
 
 main().catch((error) => {

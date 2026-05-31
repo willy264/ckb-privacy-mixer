@@ -1,10 +1,8 @@
-import { getJoyIDCellDep } from '@joyid/ckb';
 import {
   AggronWithdrawalProvider,
   buildMerkleTree,
   buildRealWithdrawalProof,
   buildWithdrawTransaction,
-  type CkbCellDep,
   type CkbTransaction,
   type LocalWithdrawalProofResult,
   type WithdrawalTransaction,
@@ -111,32 +109,6 @@ function resolveLeafIndex(note: DepositNote, commitments: string[]) {
   throw new Error('Unable to locate this note inside its local session commitment set.');
 }
 
-export function ensureJoyIdCellDep(transaction: CkbTransaction): CkbTransaction {
-  const joyIdDep = getJoyIDCellDep(false);
-  const mappedDep: CkbCellDep = {
-    outPoint: {
-      txHash: joyIdDep.outPoint.txHash,
-      index: joyIdDep.outPoint.index,
-    },
-    depType: joyIdDep.depType,
-  };
-
-  const exists = transaction.cellDeps.some((dep: CkbCellDep) =>
-    dep.outPoint.txHash === mappedDep.outPoint.txHash &&
-    dep.outPoint.index === mappedDep.outPoint.index &&
-    dep.depType === mappedDep.depType,
-  );
-
-  if (exists) {
-    return transaction;
-  }
-
-  return {
-    ...transaction,
-    cellDeps: [...transaction.cellDeps, mappedDep],
-  };
-}
-
 export async function prepareVaultWithdrawal(
   note: DepositNote,
   options: PrepareVaultWithdrawalOptions = {},
@@ -223,8 +195,7 @@ export async function broadcastPreparedWithdrawal(
     prepared.transaction,
     signerAddress,
   );
-  const unsignedTransaction = ensureJoyIdCellDep(signingRequest.transaction);
-  const signedTransaction = await signTransactionWithJoyId(unsignedTransaction as any);
+  const signedTransaction = await signTransactionWithJoyId(signingRequest.transaction);
 
   return provider.broadcastSignedWithdrawal(signedTransaction as unknown as CkbTransaction);
 }

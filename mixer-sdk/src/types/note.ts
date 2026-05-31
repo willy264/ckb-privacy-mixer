@@ -12,8 +12,12 @@ export interface DepositNote {
     sessionId: string;
     /** The ct input cell outpoint that was committed */
     inputOutPoint: string;
-    /** The blinding factor used in the Pedersen commitment (hex, 32 bytes) */
-    blindingFactor: string;
+    /** The blinding factor used in the Pedersen commitment (hex, 32 bytes) - legacy/CT only */
+    blindingFactor?: string;
+    /** The ZK secret for the Poseidon commitment (hex, 31 bytes) */
+    secret: string;
+    /** The ZK nullifier for the Poseidon commitment (hex, 31 bytes) */
+    nullifierSecret: string;
     /** The one-time stealth address where the output is directed */
     stealthOutputAddress: string;
     /** Unix timestamp when the note was created */

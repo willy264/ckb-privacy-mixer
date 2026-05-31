@@ -1,10 +1,9 @@
 import '../env.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { deriveCommitment } from 'mixer-sdk/dist/utils/crypto.js';
-import { helpers, commons, config as lumosConfig, RPC } from '@ckb-lumos/lumos';
-import { scriptToHash, serializeWitnessArgs } from '@nervosnetwork/ckb-sdk-utils';
-import { buildAndSendTransaction, getDeployerAddress, getDeployerLock, getIndexer, initializePudge, requiredEnv, resolveWorkingEndpointPair, waitForTransaction } from './lumos.js';
+import { deriveCommitment } from 'mixer-sdk';
+import { ccc } from '@ckb-ccc/core';
+import { requiredEnv, resolveWorkingEndpointPair, waitForTransaction } from './ccc.js';
 import { createCtInfoData, parseCtInfoData } from './obscell.js';
 
 const execFileAsync = promisify(execFile);
@@ -28,80 +27,67 @@ async function runMintHelper(amount: bigint): Promise<MintHelperOutput> {
     return JSON.parse(stdout) as MintHelperOutput;
 }
 
-async function fetchLiveCell(rpc: RPC, txHash: string, index: string) {
-    const liveCell = await rpc.getLiveCell(
-        {
-            txHash,
-            index,
-        } as any,
-        true,
-    );
+// fetchLiveCell removed
 
-    if (!liveCell.cell || liveCell.status !== 'live') {
-        throw new Error(`Live cell ${txHash}:${index} not found on-chain.`);
-    }
-
-    return liveCell as typeof liveCell & { cell: NonNullable<typeof liveCell.cell> };
-}
-
-async function findLiveCtInfoCell(lockScript: any, typeScript: any) {
-    const endpoint = await resolveWorkingEndpointPair();
-    const collector = getIndexer(endpoint).collector({
-        lock: lockScript,
-        type: typeScript,
-    } as any);
-
-    for await (const cell of collector.collect()) {
-        if (!cell.outPoint) {
+async function findLiveCtInfoCell(client: ccc.Client, lockScript: ccc.Script, typeScript: ccc.Script) {
+    for await (const cell of client.findCells({ script: lockScript, scriptType: 'lock', scriptSearchMode: 'exact' })) {
+        if (!cell.cellOutput.type || !cell.cellOutput.type.eq(typeScript)) {
             continue;
         }
         return cell;
     }
-
     return null;
 }
 
 function createCtInfoScript(ctInfoCodeHash: string, ctInfoHashType: 'data' | 'data1' | 'type', args: string) {
-    return {
+    return ccc.Script.from({
         codeHash: ctInfoCodeHash,
         hashType: ctInfoHashType,
         args,
-    };
+    });
 }
 
 function createCtTokenScript(ctTokenCodeHash: string, ctTokenHashType: 'data' | 'data1' | 'type', ctInfoScriptHash: string) {
-    return {
+    return ccc.Script.from({
         codeHash: ctTokenCodeHash,
         hashType: ctTokenHashType,
         args: ctInfoScriptHash,
-    };
+    });
 }
 
 async function main() {
-    initializePudge();
-    lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
     const endpoint = await resolveWorkingEndpointPair();
 
+    const client = new ccc.ClientPublicTestnet({ url: endpoint.rpcUrl });
+
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
-    const recipientAddress = process.argv[2] ?? getDeployerAddress(privateKey);
+    const signer = new ccc.SignerCkbPrivateKey(client, privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`);
+    const deployerAddress = await signer.getRecommendedAddress();
+    const recipientAddress = process.argv[2] ?? deployerAddress;
+    
     const ctInfoCodeHash = requiredEnv('CT_INFO_TYPE_CODE_HASH');
     const ctInfoHashType = requiredEnv('CT_INFO_TYPE_HASH_TYPE') as 'data' | 'data1' | 'type';
     const ctTokenCodeHash = requiredEnv('CT_TOKEN_TYPE_CODE_HASH');
     const ctTokenHashType = requiredEnv('CT_TOKEN_TYPE_HASH_TYPE') as 'data' | 'data1' | 'type';
     const ctInfoArgs = requiredEnv('CT_INFO_TYPE_ARGS');
 
-    const deployerLock = getDeployerLock(privateKey);
+    const deployerLock = await client.getKnownScript(ccc.KnownScript.Secp256k1Blake160).then(s => ccc.Script.from({
+        codeHash: s.codeHash,
+        hashType: s.hashType,
+        args: ccc.hexFrom(signer.publicKey).slice(0, 42) // Wait, we can just use ccc.Address
+    }));
+    // Actually we can get deployer lock script from signer
+    const deployerLockObj = (await ccc.Address.fromString(deployerAddress, client)).script;
+
     const ctInfoScript = createCtInfoScript(ctInfoCodeHash, ctInfoHashType, ctInfoArgs);
-    const liveCtInfoCellRef = await findLiveCtInfoCell(deployerLock, ctInfoScript);
-    if (!liveCtInfoCellRef?.outPoint) {
+    const liveCtInfoCellRef = await findLiveCtInfoCell(client, deployerLockObj, ctInfoScript);
+    if (!liveCtInfoCellRef) {
         throw new Error(`Unable to locate the live ct-info state cell for args ${ctInfoArgs}.`);
     }
 
-    const rpc = new RPC(endpoint.rpcUrl);
-    const ctInfoCellTxHash = liveCtInfoCellRef.outPoint.txHash;
-    const ctInfoCellIndex = liveCtInfoCellRef.outPoint.index;
-    const liveCtInfoCell = await fetchLiveCell(rpc, ctInfoCellTxHash, ctInfoCellIndex);
-    const ctInfoData = parseCtInfoData(liveCtInfoCell.cell.data.content);
+    const ctInfoDataHex = await client.getCell(liveCtInfoCellRef.outPoint).then(c => c?.outputData);
+    if (!ctInfoDataHex) throw new Error('CT info cell data not found');
+    const ctInfoData = parseCtInfoData(ctInfoDataHex);
 
     const newSupply = ctInfoData.totalSupply + MINT_AMOUNT;
     const updatedCtInfoData = createCtInfoData({
@@ -113,118 +99,95 @@ async function main() {
 
     const helper = await runMintHelper(MINT_AMOUNT);
 
-    const ctInfoScriptHash = scriptToHash(ctInfoScript as any);
+    const ctInfoScriptHash = ctInfoScript.hash();
     const ctTokenScript = createCtTokenScript(ctTokenCodeHash, ctTokenHashType, ctInfoScriptHash);
-    const recipientLock = helpers.parseAddress(recipientAddress, { config: lumosConfig.getConfig() });
+    const recipientLock = (await ccc.Address.fromString(recipientAddress, client)).script;
 
-    const indexer = getIndexer(endpoint);
-    const feePayerAddress = getDeployerAddress(privateKey);
-    let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
+    const cccTx = ccc.Transaction.from({});
 
-    txSkeleton = txSkeleton.update('inputs', (inputs: any) =>
-        inputs.push({
-            cellOutput: {
-                capacity: liveCtInfoCell.cell.output.capacity,
-                lock: liveCtInfoCell.cell.output.lock,
-                type: ctInfoScript,
-            },
-            data: liveCtInfoCell.cell.data.content,
-            outPoint: {
-                txHash: ctInfoCellTxHash,
-                index: ctInfoCellIndex,
-            },
-        } as any),
-    );
-
-    txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
-        outputs
-            .push({
-                cellOutput: {
-                    capacity: liveCtInfoCell.cell.output.capacity,
-                    lock: liveCtInfoCell.cell.output.lock,
-                    type: ctInfoScript,
-                },
-                data: updatedCtInfoData,
-            } as any)
-            .push({
-                cellOutput: {
-                    capacity: `0x${CT_TOKEN_OUTPUT_CAPACITY.toString(16)}`,
-                    lock: recipientLock,
-                    type: ctTokenScript,
-                },
-                data: `${helper.commitment_hex}${'00'.repeat(32)}`.replace(/^0x0x/, '0x'),
-            } as any),
-    );
-
-    txSkeleton = txSkeleton.update('cellDeps', (cellDeps: any) =>
-        cellDeps
-            .push({
-                outPoint: {
-                    txHash: lumosConfig.getConfig().SCRIPTS.SECP256K1_BLAKE160!.TX_HASH,
-                    index: lumosConfig.getConfig().SCRIPTS.SECP256K1_BLAKE160!.INDEX,
-                },
-                depType: lumosConfig.getConfig().SCRIPTS.SECP256K1_BLAKE160!.DEP_TYPE as any,
-            })
-            .push({
-                outPoint: {
-                    txHash: requiredEnv('CT_INFO_TYPE_TX_HASH'),
-                    index: requiredEnv('CT_INFO_TYPE_INDEX'),
-                },
-                depType: 'code',
-            })
-            .push({
-                outPoint: {
-                    txHash: requiredEnv('CT_TOKEN_TYPE_TX_HASH'),
-                    index: requiredEnv('CT_TOKEN_TYPE_INDEX'),
-                },
-                depType: 'code',
-            })
-            .push({
-                outPoint: {
-                    txHash: requiredEnv('STEALTH_LOCK_TX_HASH'),
-                    index: requiredEnv('STEALTH_LOCK_INDEX'),
-                },
-                depType: 'code',
-            }),
-    );
-
-    txSkeleton = await commons.common.injectCapacity(
-        txSkeleton,
-        [feePayerAddress],
-        CT_TOKEN_OUTPUT_CAPACITY,
-        undefined,
-        undefined,
-        { config: lumosConfig.getConfig() },
-    );
-
-    txSkeleton = await commons.common.payFeeByFeeRate(
-        txSkeleton,
-        [feePayerAddress],
-        1000,
-        undefined,
-        { config: lumosConfig.getConfig() },
-    );
-
-    const ctInfoWitness = serializeWitnessArgs({
-        lock: `0x${'00'.repeat(65)}`,
-        inputType: '0x',
-        outputType: helper.mint_commitment_hex,
+    cccTx.addInput({
+        previousOutput: liveCtInfoCellRef.outPoint,
+        since: '0x0',
     });
-    const ctTokenWitness = serializeWitnessArgs({
+
+    cccTx.addOutput({
+        capacity: ccc.numFrom(liveCtInfoCellRef.cellOutput.capacity),
+        lock: liveCtInfoCellRef.cellOutput.lock,
+        type: ctInfoScript,
+    }, ccc.hexFrom(updatedCtInfoData));
+
+    cccTx.addOutput({
+        capacity: ccc.numFrom(CT_TOKEN_OUTPUT_CAPACITY),
+        lock: recipientLock,
+        type: ctTokenScript,
+    }, ccc.hexFrom(`${helper.commitment_hex}${'00'.repeat(32)}`.replace(/^0x0x/, '0x')));
+
+    const secp = await client.getKnownScript(ccc.KnownScript.Secp256k1Blake160);
+    cccTx.addCellDeps({
+        outPoint: secp.cellDeps[0].cellDep.outPoint,
+        depType: secp.cellDeps[0].cellDep.depType,
+    });
+    
+    cccTx.addCellDeps({
+        outPoint: {
+            txHash: requiredEnv('CT_INFO_TYPE_TX_HASH'),
+            index: ccc.numToHex(requiredEnv('CT_INFO_TYPE_INDEX')),
+        },
+        depType: 'code',
+    });
+    
+    cccTx.addCellDeps({
+        outPoint: {
+            txHash: requiredEnv('CT_TOKEN_TYPE_TX_HASH'),
+            index: ccc.numToHex(requiredEnv('CT_TOKEN_TYPE_INDEX')),
+        },
+        depType: 'code',
+    });
+    
+    cccTx.addCellDeps({
+        outPoint: {
+            txHash: requiredEnv('STEALTH_LOCK_TX_HASH'),
+            index: ccc.numToHex(requiredEnv('STEALTH_LOCK_INDEX')),
+        },
+        depType: 'code',
+    });
+
+    await cccTx.completeInputsByCapacity(signer);
+    await cccTx.completeFeeBy(signer, 1000);
+
+    // Witness structure for mint
+    const witnesses: ccc.Hex[] = [];
+    
+    // We need to build the WitnessArgs correctly
+    // The ct-info witness uses outputType
+    const ctInfoWitnessObj = {
+        lock: '0x' + '00'.repeat(65),
+        inputType: '0x',
+        outputType: helper.mint_commitment_hex
+    };
+    
+    // The ct-token witness uses inputType & outputType
+    const ctTokenWitnessObj = {
         lock: '0x',
         inputType: helper.mint_commitment_hex,
+        outputType: helper.range_proof_hex
+    };
+
+    // Serialize WitnessArgs properly
+    // It's probably easier to use ccc.WitnessArgs
+    witnesses[0] = ccc.hexFrom(ccc.WitnessArgs.from({
+        lock: '0x' + '00'.repeat(65),
+        outputType: helper.mint_commitment_hex,
+    }).toBytes());
+    
+    witnesses[1] = ccc.hexFrom(ccc.WitnessArgs.from({
+        inputType: helper.mint_commitment_hex,
         outputType: helper.range_proof_hex,
-    });
+    }).toBytes());
 
-    txSkeleton = txSkeleton.update('witnesses', (witnesses: any) =>
-        witnesses.clear().push(ctInfoWitness, ctTokenWitness),
-    );
+    cccTx.witnesses = witnesses;
 
-    txSkeleton = commons.common.prepareSigningEntries(txSkeleton, {
-        config: lumosConfig.getConfig(),
-    });
-
-    const { txHash } = await buildAndSendTransaction(txSkeleton, privateKey);
+    const txHash = await signer.sendTransaction(cccTx);
     await waitForTransaction(txHash);
 
     const outputOutPoint = `${txHash}:0x1`;

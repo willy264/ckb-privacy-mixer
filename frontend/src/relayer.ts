@@ -7,8 +7,34 @@
  * the transaction, then deducts a small service fee from the withdrawal amount.
  *
  * The relayer CANNOT steal funds — the ZK proof constrains the output
+ * The relayer CANNOT steal funds — the ZK proof constrains the output
  * destination on-chain, enforced by the `zk-membership-type` contract.
  */
+import { initWaku, publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk';
+import type { LightNode } from '@waku/sdk';
+
+let wakuNode: LightNode | null = null;
+const wakuJobs = new Map<string, RelayJobResult>();
+
+export async function getWaku(): Promise<LightNode> {
+    if (!wakuNode) {
+        wakuNode = await initWaku();
+        
+        // Listen for results globally
+        await subscribeToWakuMessages(wakuNode, 'withdrawal_result', (payload: any) => {
+            if (payload.jobId && wakuJobs.has(payload.jobId)) {
+                wakuJobs.set(payload.jobId, {
+                    jobId: payload.jobId,
+                    status: payload.status,
+                    txHash: payload.txHash,
+                    error: payload.error,
+                });
+            }
+        });
+    }
+    return wakuNode!;
+}
+
 
 export interface RelayerInfo {
     /** Relayer's CKB address (receives the fee). */
@@ -105,6 +131,23 @@ export async function submitToRelayer(
     transaction:      unknown,
     endpoint = getRelayerUrl(),
 ): Promise<RelayJobResult> {
+    const useWaku = (import.meta as any).env?.VITE_USE_WAKU === 'true';
+
+    if (useWaku) {
+        const waku = await getWaku();
+        const jobId = `waku-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        wakuJobs.set(jobId, { jobId, status: 'queued' });
+        
+        await publishWakuMessage(waku, 'withdrawal_request', { 
+            nullifierHex, 
+            transaction,
+            // Include jobId so the relayer can mirror it in the result
+            jobId 
+        });
+        
+        return wakuJobs.get(jobId)!;
+    }
+
     const res = await fetch(`${endpoint}/relay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

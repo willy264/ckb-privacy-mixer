@@ -5,7 +5,6 @@ import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { helpers, config as lumosConfig } from '@ckb-lumos/lumos';
 import {
     findOrCreatePool,
     joinPool,
@@ -25,6 +24,7 @@ import {
 import { buildUnsignedDepositFinalization, finalizeSignedDepositRound } from './deposit-finalizer.js';
 import { buildCoinJoinTransaction, recordSignature, broadcastCoinJoin } from './session.js';
 import { logger } from '../utils/logger.js';
+import { initWaku, subscribeToWakuMessages, publishWakuMessage } from 'mixer-sdk';
 
 interface WsJoinMessage {
     type: 'join';
@@ -61,12 +61,7 @@ const joinRequestSchema = z.object({
     stealthOutputAddress: z.string().regex(/^0x[0-9a-fA-F]{106}$/, 'Must be a valid 53-byte hex string starting with 0x'),
     walletAddress: z.string(),
 }).refine((data) => {
-    try {
-        helpers.parseAddress(data.walletAddress, { config: lumosConfig.predefined.AGGRON4 });
-        return true;
-    } catch {
-        return false;
-    }
+    return /^ck[bt]1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{42,}$/i.test(data.walletAddress);
 }, { message: 'Invalid wallet address encoding', path: ['walletAddress'] });
 
 const prepareDepositSchema = z.object({
@@ -74,17 +69,13 @@ const prepareDepositSchema = z.object({
     walletAddress: z.string(),
     stealthOutputAddress: z.string().regex(/^0x[0-9a-fA-F]{106}$/, 'Must be a valid 53-byte stealth args hex'),
 }).refine((data) => {
-    try {
-        helpers.parseAddress(data.walletAddress, { config: lumosConfig.predefined.AGGRON4 });
-        return true;
-    } catch {
-        return false;
-    }
+    return /^ck[bt]1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{42,}$/i.test(data.walletAddress);
 }, { message: 'Invalid wallet address encoding', path: ['walletAddress'] });
 
 const registerDepositSchema = z.object({
     commitment: z.string().regex(/^0x[0-9a-fA-F]+$/, 'Must be a valid hex string'),
     blindingFactor: z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'Must be a 32-byte hex string'),
+    zkCommitment: z.string().regex(/^0x[0-9a-fA-F]+$/, 'Must be a valid hex string'),
     depositTxHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'Must be a valid tx hash'),
     inputOutPoint: z.string().regex(/^0x[0-9a-fA-F]{64}:0x[0-9a-fA-F]+$/, 'Must be a txHash:index outpoint'),
     noteCreatedAt: z.coerce.number().int().positive(),
@@ -453,4 +444,107 @@ export function createCoordinatorServer() {
     });
 
     return server;
+}
+
+/**
+ * Start a Waku P2P listener for CoinJoin coordination.
+ *
+ * Users broadcast deposit intents over Waku. The coordinator aggregates
+ * them into pools, builds the CoinJoin transaction, and broadcasts the
+ * unsigned transaction back for signing — all over the P2P network.
+ */
+export async function startWakuCoordinatorListener() {
+    logger.info('[Coordinator/Waku] Initializing Waku light node...');
+    const waku = await initWaku();
+    logger.info('[Coordinator/Waku] Connected to Waku network. Listening for deposit_intent messages.');
+
+    await subscribeToWakuMessages(waku, 'deposit_intent', async (payload: any) => {
+        try {
+            const parsed = joinRequestSchema.parse({
+                commitment: payload.commitment,
+                stealthOutputAddress: payload.stealthOutputAddress,
+                walletAddress: payload.walletAddress,
+            });
+
+            const denomination = BigInt(payload.denomination);
+            const minParticipants = parseInt(process.env.COORDINATOR_MIN_PARTICIPANTS ?? '5', 10);
+            const pool = findOrCreatePool(denomination, minParticipants);
+            const participantId = joinPool(pool.poolId, parsed.commitment, parsed.stealthOutputAddress, parsed.walletAddress);
+
+            logger.info('[Coordinator/Waku] Participant joined via P2P', {
+                poolId: pool.poolId,
+                participantId,
+            });
+
+            // Broadcast join confirmation
+            await publishWakuMessage(waku, 'pool_joined', {
+                poolId: pool.poolId,
+                participantId,
+                pool: poolSummary(pool),
+            });
+
+            // Check if pool is full
+            if (pool.participants.length >= pool.requiredParticipants) {
+                const txHex = await buildCoinJoinTransaction(pool);
+                await publishWakuMessage(waku, 'pool_full', {
+                    poolId: pool.poolId,
+                    pendingTxHex: txHex,
+                    message: 'Pool is full. Please sign the transaction.',
+                });
+                logger.info('[Coordinator/Waku] Pool full — signing round started', {
+                    poolId: pool.poolId,
+                });
+            } else {
+                await publishWakuMessage(waku, 'pool_update', {
+                    pool: poolSummary(pool),
+                });
+            }
+        } catch (err) {
+            logger.error('[Coordinator/Waku] Failed to process deposit intent', {
+                error: String(err),
+            });
+        }
+    });
+
+    // Listen for signatures submitted over Waku
+    await subscribeToWakuMessages(waku, 'coinjoin_signature', async (payload: any) => {
+        try {
+            const allSigned = recordSignature(payload.poolId, payload.participantId, payload.signature);
+
+            if (allSigned) {
+                const pool = pools.get(payload.poolId);
+                if (pool) {
+                    try {
+                        const txHash = await broadcastCoinJoin(pool, process.env.CKB_RPC_URL ?? '');
+                        const sessionCommitments = pool.participants.map(p => p.commitment);
+                        await publishWakuMessage(waku, 'coinjoin_broadcast', {
+                            poolId: payload.poolId,
+                            txHash,
+                            sessionCommitments,
+                            message: 'CoinJoin transaction successfully broadcast.',
+                        });
+                    } catch (broadcastErr) {
+                        logger.error('[Coordinator/Waku] Broadcast error', { error: String(broadcastErr) });
+                        await publishWakuMessage(waku, 'coinjoin_error', {
+                            poolId: payload.poolId,
+                            message: `Transaction broadcast failed: ${String(broadcastErr)}`,
+                        });
+                    }
+                }
+            } else {
+                const pool = pools.get(payload.poolId);
+                if (pool) {
+                    await publishWakuMessage(waku, 'pool_update', {
+                        pool: poolSummary(pool),
+                    });
+                }
+            }
+        } catch (err) {
+            logger.error('[Coordinator/Waku] Failed to process signature', {
+                error: String(err),
+            });
+        }
+    });
+
+    return waku;
 }

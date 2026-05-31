@@ -6,13 +6,16 @@ import { buildRealWithdrawalProof } from '../utils/proof';
 const DENOMINATION = 100n;
 
 async function buildDepositNote(sessionId: string, inputOutPoint: string, stealthOutputAddress: string): Promise<DepositNote> {
-    const blindingFactor = randomBlindingFactor();
-    const commitment = await deriveCommitment(blindingFactor, sessionId);
+    const secret = randomBlindingFactor();
+    const nullifierSecret = randomBlindingFactor();
+    const commitment = await deriveCommitment(secret, nullifierSecret);
 
     return {
         sessionId,
         inputOutPoint,
-        blindingFactor,
+        blindingFactor: secret,
+        secret,
+        nullifierSecret,
         stealthOutputAddress,
         createdAt: Date.now(),
         commitment,

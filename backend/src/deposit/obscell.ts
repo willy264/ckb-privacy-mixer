@@ -1,6 +1,6 @@
-import { blake2b, PERSONAL, serializeInput, scriptToHash } from '@nervosnetwork/ckb-sdk-utils';
-import { helpers, commons, config as lumosConfig } from '@ckb-lumos/lumos';
-import { getDeployerAddress, getDeployerLock, SHANNONS } from './lumos.js';
+import { blake2b, PERSONAL, serializeInput } from '@nervosnetwork/ckb-sdk-utils';
+import { ccc } from '@ckb-ccc/core';
+import { SHANNONS } from './ccc.js';
 
 export const CT_INFO_DATA_SIZE = 57;
 export const MINTABLE = 0x01;
@@ -64,36 +64,49 @@ export async function buildGenesisCtInfoTransaction(params: {
     privateKey: string;
     ctInfoCodeHash: string;
     ctInfoHashType: 'data' | 'data1' | 'type';
-    indexer: any;
+    client: ccc.Client;
     ctInfoDep?: { txHash: string; index: string; depType?: 'code' | 'depGroup' };
     supplyCap?: bigint;
     flags?: number;
 }) {
-    lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
-    const address = getDeployerAddress(params.privateKey);
-    const lock = getDeployerLock(params.privateKey);
-
-    let txSkeleton = helpers.TransactionSkeleton({ cellProvider: params.indexer });
-    txSkeleton = await commons.common.injectCapacity(
-        txSkeleton,
-        [address],
-        200n * SHANNONS,
-        undefined,
-        undefined,
-        { config: lumosConfig.getConfig() },
+    const signer = new ccc.SignerCkbPrivateKey(
+        params.client,
+        params.privateKey.startsWith('0x') ? params.privateKey : `0x${params.privateKey}`
     );
+    const addressObj = await ccc.Address.fromString(await signer.getRecommendedAddress(), params.client);
+    const lock = addressObj.script;
 
-    const firstInput = txSkeleton.get('inputs').get(0);
-    if (!firstInput) {
+    const cccTx = ccc.Transaction.from({});
+    // Add a dummy input to calculate TypeID/CtInfo args. We will replace it during completeInputsByCapacity,
+    // but actually completeInputsByCapacity adds to existing inputs if needed.
+    // Wait, completeInputsByCapacity will just fetch live cells and add them.
+    // Let's call completeInputsByCapacity first to get inputs!
+    const dummySigner = new ccc.SignerCkbScriptReadonly(params.client, lock);
+    
+    // We want to create an output with capacity ~200 CKB
+    cccTx.addOutput({
+        capacity: ccc.numFrom(200n * SHANNONS),
+        lock,
+        type: ccc.Script.from({
+            codeHash: params.ctInfoCodeHash,
+            hashType: params.ctInfoHashType,
+            args: '0x' + '00'.repeat(32), // dummy args for size estimation
+        }),
+    }, '0x' + '00'.repeat(CT_INFO_DATA_SIZE));
+
+    await cccTx.completeInputsByCapacity(dummySigner);
+    if (cccTx.inputs.length === 0) {
         throw new Error('Unable to find an input for ct-info genesis type-id calculation.');
     }
 
+    const firstInput = cccTx.inputs[0];
+
     const typeArgs = createCtInfoTypeArgs(
         {
-            previousOutput: firstInput.outPoint,
+            previousOutput: firstInput.previousOutput,
             since: '0x0',
         },
-        0n,
+        0n, // output index is 0
     );
     const data = createCtInfoData({
         totalSupply: 0n,
@@ -111,57 +124,36 @@ export async function buildGenesisCtInfoTransaction(params: {
         throw new Error(`ct-info genesis data must be ${CT_INFO_DATA_SIZE} bytes, got ${dataBytes.byteLength}`);
     }
 
-    txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
-        outputs.update(outputs.size - 1, (cell: any) => ({
-            ...cell,
-            cellOutput: {
-                ...cell.cellOutput,
-                lock,
-                type: {
-                    codeHash: params.ctInfoCodeHash,
-                    hashType: params.ctInfoHashType,
-                    args: typeArgs,
-                },
-            },
-            data,
-        })),
-    );
+    // Update the output with the real args and data
+    cccTx.outputs[0].type!.args = typeArgs as `0x${string}`;
+    cccTx.outputsData[0] = ccc.hexFrom(data);
 
     if (params.ctInfoDep) {
-        txSkeleton = txSkeleton.update('cellDeps', (cellDeps: any) =>
-            cellDeps.push({
-                outPoint: {
-                    txHash: params.ctInfoDep!.txHash,
-                    index: params.ctInfoDep!.index,
-                },
-                depType: params.ctInfoDep!.depType ?? 'code',
-            }),
-        );
+        cccTx.addCellDeps({
+            outPoint: {
+                txHash: params.ctInfoDep.txHash,
+                index: ccc.numToHex(params.ctInfoDep.index),
+            },
+            depType: params.ctInfoDep.depType ?? 'code',
+        });
     }
 
-    txSkeleton = await commons.common.payFeeByFeeRate(
-        txSkeleton,
-        [address],
-        1000,
-        undefined,
-        { config: lumosConfig.getConfig() },
-    );
-
-    txSkeleton = commons.common.prepareSigningEntries(txSkeleton, {
-        config: lumosConfig.getConfig(),
+    const secp = await params.client.getKnownScript(ccc.KnownScript.Secp256k1Blake160);
+    cccTx.addCellDeps({
+        outPoint: secp.cellDeps[0].cellDep.outPoint,
+        depType: secp.cellDeps[0].cellDep.depType,
     });
 
-    const output = txSkeleton.get('outputs').get(txSkeleton.get('outputs').size - 1);
-    if (!output?.cellOutput?.type) {
-        throw new Error('Unable to resolve ct-info genesis output type script.');
-    }
+    await cccTx.completeFeeBy(dummySigner, 1000);
+
+    const typeScript = cccTx.outputs[0].type!;
 
     return {
-        txSkeleton,
+        cccTx,
         typeArgs,
         data,
-        typeScript: output.cellOutput.type,
-        typeScriptHash: scriptToHash(output.cellOutput.type as any),
+        typeScript,
+        typeScriptHash: typeScript.hash(),
     };
 }
 

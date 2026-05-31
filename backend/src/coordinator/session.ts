@@ -1,12 +1,9 @@
 import crypto from 'crypto';
-import { RPC, helpers, config as lumosConfig, Indexer } from '@ckb-lumos/lumos';
-import { blockchain } from '@ckb-lumos/base';
-import type { Cell } from '@ckb-lumos/lumos';
+import { ccc } from '@ckb-ccc/core';
 import type { MixPool } from './pool.js';
 import { pools } from './pool.js';
 import { logger } from '../utils/logger.js';
 
-lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
 
 const CKB_SHANNON = BigInt(1_0000_0000); // 1 CKB = 10^8 shannons
 const MIN_CELL_CAPACITY = BigInt(61) * CKB_SHANNON; // ~61 CKB minimum for a cell
@@ -24,14 +21,9 @@ function secureShuffleArray<T>(arr: T[]): T[] {
 
 /**
  * Parse a CKB address into its lock script.
- * Handles both short-format (ckt1qzda...) and full-format (ckt1qr.../JoyID) addresses.
  */
-function parseLockScript(address: string) {
-    try {
-        return helpers.parseAddress(address, { config: lumosConfig.getConfig() });
-    } catch {
-        return helpers.parseAddress(address);
-    }
+async function parseLockScript(address: string, client: ccc.Client) {
+    return (await ccc.Address.fromString(address, client)).script;
 }
 
 /**
@@ -39,17 +31,16 @@ function parseLockScript(address: string) {
  * Returns cells whose total capacity >= `needed`.
  */
 async function collectCells(
-    indexer: Indexer,
-    lock: ReturnType<typeof parseLockScript>,
+    client: ccc.Client,
+    lock: ccc.Script,
     needed: bigint,
-): Promise<{ cells: Cell[]; total: bigint }> {
-    const collector = indexer.collector({ lock });
-    const cells: Cell[] = [];
+) {
+    const cells: ccc.Cell[] = [];
     let total = 0n;
 
-    for await (const cell of collector.collect()) {
+    for await (const cell of client.findCells({ script: lock, scriptType: 'lock', scriptSearchMode: 'exact' })) {
         cells.push(cell);
-        total += BigInt(cell.cellOutput.capacity);
+        total += cell.cellOutput.capacity;
         if (total >= needed) break;
     }
 
@@ -65,7 +56,7 @@ export async function buildCoinJoinTransaction(pool: MixPool): Promise<string> {
     }
 
     const rpcUrl = process.env.CKB_RPC_URL!;
-    const indexer = new Indexer(rpcUrl);
+    const client = new ccc.ClientPublicTestnet({ url: rpcUrl });
 
     // The denomination from the frontend is in CKB units (e.g. 100 = 100 CKB).
     // Convert to shannons for on-chain capacity.
@@ -76,35 +67,28 @@ export async function buildCoinJoinTransaction(pool: MixPool): Promise<string> {
         ? denominationShannons
         : MIN_CELL_CAPACITY;
 
-    // ── Use Lumos TransactionSkeleton so createTransactionFromSkeleton ──
-    // ── produces the exact format JoyID expects                        ──
-    let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
+    const cccTx = ccc.Transaction.from({});
 
     // ── Add stealth outputs (shuffled to break input→output link) ────────
     const shuffledParticipants = secureShuffleArray(pool.participants);
 
     for (const p of shuffledParticipants) {
-        const stealthLock = {
+        const stealthLock = ccc.Script.from({
             codeHash: process.env.STEALTH_LOCK_CODE_HASH!,
             hashType: process.env.STEALTH_LOCK_HASH_TYPE! as 'type' | 'data' | 'data1',
             args: p.stealthOutputAddress,
-        };
-        txSkeleton = txSkeleton.update('outputs', (outputs) =>
-            outputs.push({
-                cellOutput: {
-                    capacity: `0x${outputCapacity.toString(16)}`,
-                    lock: stealthLock,
-                },
-                data: '0x',
-            })
-        );
+        });
+        cccTx.addOutput({
+            capacity: outputCapacity,
+            lock: stealthLock,
+        }, '0x');
     }
 
     // ── Collect input cells for each participant (manual — bypasses lock registration) ──
     for (const p of pool.participants) {
-        const lock = parseLockScript(p.walletAddress);
+        const lock = await parseLockScript(p.walletAddress, client);
         const needed = outputCapacity + TX_FEE;
-        const { cells, total } = await collectCells(indexer, lock, needed);
+        const { cells, total } = await collectCells(client, lock, needed);
 
         if (cells.length === 0) {
             throw new Error(
@@ -123,61 +107,83 @@ export async function buildCoinJoinTransaction(pool: MixPool): Promise<string> {
 
         // Add each collected cell as an input
         for (const cell of cells) {
-            txSkeleton = txSkeleton.update('inputs', (inputs) => inputs.push(cell));
+            cccTx.addInput({
+                previousOutput: cell.outPoint,
+                since: 0n,
+            });
         }
 
         // Return change to the participant's own lock
         const change = total - needed;
         if (change >= MIN_CELL_CAPACITY) {
-            txSkeleton = txSkeleton.update('outputs', (outputs) =>
-                outputs.push({
-                    cellOutput: {
-                        capacity: `0x${change.toString(16)}`,
-                        lock,
-                    },
-                    data: '0x',
-                })
-            );
+            cccTx.addOutput({
+                capacity: change,
+                lock,
+            }, '0x');
         }
     }
 
     // ── Add cell deps ────────────────────────────────────────────────────
     if (process.env.STEALTH_LOCK_TX_HASH) {
-        txSkeleton = txSkeleton.update('cellDeps', (cellDeps) =>
-            cellDeps.push({
-                outPoint: {
-                    txHash: process.env.STEALTH_LOCK_TX_HASH!,
-                    index: process.env.STEALTH_LOCK_INDEX ?? '0x0',
-                },
-                depType: 'code',
-            })
-        );
+        cccTx.addCellDeps({
+            outPoint: {
+                txHash: process.env.STEALTH_LOCK_TX_HASH!,
+                index: ccc.numToHex(process.env.STEALTH_LOCK_INDEX ?? '0x0'),
+            },
+            depType: 'code',
+        });
     }
 
     // ── Add empty witnesses (one per input — participants fill in their own) ──
-    const emptyWitness = `0x${Buffer.from(
-        blockchain.WitnessArgs.pack({
-            lock: undefined,
-            inputType: undefined,
-            outputType: undefined,
-        })
-    ).toString('hex')}`;
-    const inputCount = txSkeleton.get('inputs').size;
+    const emptyWitness = ccc.hexFrom(ccc.WitnessArgs.from({}).toBytes());
+    const inputCount = cccTx.inputs.length;
     for (let i = 0; i < inputCount; i++) {
-        txSkeleton = txSkeleton.update('witnesses', (witnesses) => witnesses.push(emptyWitness));
+        cccTx.witnesses.push(emptyWitness);
     }
 
-    // ── Serialize using Lumos (ensures correct molecule-compatible format) ──
-    const rawTx = helpers.createTransactionFromSkeleton(txSkeleton);
-    const txHex = `0x${Buffer.from(JSON.stringify(rawTx)).toString('hex')}`;
+    // ── Serialize to JSON string so frontend can decode it ──
+    const txObj = {
+        version: ccc.numToHex(cccTx.version),
+        cellDeps: cccTx.cellDeps.map((d) => ({
+            outPoint: {
+                txHash: d.outPoint.txHash,
+                index: ccc.numToHex(d.outPoint.index),
+            },
+            depType: d.depType,
+        })),
+        headerDeps: cccTx.headerDeps,
+        inputs: cccTx.inputs.map((i) => ({
+            previousOutput: {
+                txHash: i.previousOutput.txHash,
+                index: ccc.numToHex(i.previousOutput.index),
+            },
+            since: ccc.numToHex(i.since),
+        })),
+        outputs: cccTx.outputs.map((o) => ({
+            capacity: ccc.numToHex(o.capacity),
+            lock: {
+                codeHash: o.lock.codeHash,
+                hashType: o.lock.hashType,
+                args: o.lock.args,
+            },
+            type: o.type ? {
+                codeHash: o.type.codeHash,
+                hashType: o.type.hashType,
+                args: o.type.args,
+            } : undefined,
+        })),
+        outputsData: cccTx.outputsData,
+        witnesses: cccTx.witnesses,
+    };
+    const txHex = `0x${Buffer.from(JSON.stringify(txObj)).toString('hex')}`;
 
     pool.status = 'building';
     pool.pendingTxHex = txHex;
 
     logger.info('[CoinJoin] Transaction built', {
         poolId: pool.poolId,
-        inputs: rawTx.inputs.length,
-        outputs: rawTx.outputs.length,
+        inputs: cccTx.inputs.length,
+        outputs: cccTx.outputs.length,
         denominationCKB: pool.denomination.toString(),
         outputCapacityShannons: outputCapacity.toString(),
     });
@@ -255,28 +261,28 @@ export async function broadcastCoinJoin(pool: MixPool, rpcUrl: string): Promise<
                 }
             }
         } catch (e) {
-            logger.warn('Failed to parse participant signature as JSON', { err: e });
+            logger.error(`Failed to parse signature for participant ${p.participantId}`, e);
         }
     }
-    
+
     tx.witnesses = mergedWitnesses;
     tx.cellDeps = mergedCellDeps;
 
-    logger.info('[CoinJoin] Sending transaction to CKB node...', { poolId: pool.poolId });
+    const cccTx = ccc.Transaction.from(tx);
+    const client = new ccc.ClientPublicTestnet({ url: rpcUrl });
 
     try {
-        const rpc = new RPC(rpcUrl);
-        const txHash = await rpc.sendTransaction(tx, 'passthrough');
+        const txHash = await client.sendTransaction(cccTx);
 
-        pool.status = 'complete';
+        pool.status = 'broadcasting';
         pool.broadcastTxHash = txHash;
+        logger.info('[CoinJoin] Successfully broadcast transaction', { poolId: pool.poolId, txHash });
 
-        logger.info('[CoinJoin] Broadcast complete', { poolId: pool.poolId, txHash });
         return txHash;
-    } catch (error) {
+    } catch (error: any) {
         pool.status = 'failed';
-        pool.failureReason = String(error);
-        logger.error('[CoinJoin] Broadcast failed', { poolId: pool.poolId, error: pool.failureReason });
+        pool.failureReason = `Broadcast failed: ${error.message}`;
+        logger.error('[CoinJoin] Broadcast failed', { poolId: pool.poolId, error: error.message });
         throw error;
     }
 }

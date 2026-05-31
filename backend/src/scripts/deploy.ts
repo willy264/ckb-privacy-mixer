@@ -1,17 +1,17 @@
 /**
- * deploy-obscell.ts
- * Deploy the compiled Obscell contracts to Aggron using Lumos.
- * Usage: npx tsx scripts/deploy-obscell.ts
+ * deploy.ts
+ * Deploy the local mixer contracts to Aggron using CCC.
+ * Usage: npx tsx backend/src/scripts/deploy.ts
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import {
     __dirname,
-    deployBinary,
-    initializeAggron,
     PROJECT_ROOT,
     requiredEnv,
-} from './lumos-common';
+    deployAllBinaries,
+    waitForTransaction,
+} from './ccc-common.js';
 
 interface DeployTarget {
     envPrefix: string;
@@ -48,53 +48,34 @@ function getResultFromEnv(envPrefix: string): DeployResult | undefined {
 }
 
 async function main() {
-    initializeAggron();
-
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
-    const releaseDir = path.resolve(PROJECT_ROOT, 'obscell-source/target/riscv64imac-unknown-none-elf/release');
-    const resultsPath = path.resolve(__dirname, 'obscell_deployment_results.json');
-    const existingResults = loadExistingResults(resultsPath);
+    const releaseDir = path.resolve(PROJECT_ROOT, 'target/riscv64imac-unknown-none-elf/release');
+    const resultsPath = path.resolve(__dirname, 'deployment_results.json');
 
     const targets: DeployTarget[] = [
         {
-            envPrefix: 'STEALTH_LOCK',
-            name: 'stealth-lock',
-            path: path.join(releaseDir, 'stealth-lock'),
+            envPrefix: 'MIXER_POOL',
+            name: 'mixer-pool-type',
+            path: path.join(releaseDir, 'mixer-pool-type'),
         },
         {
-            envPrefix: 'CT_TOKEN_TYPE',
-            name: 'ct-token-type',
-            path: path.join(releaseDir, 'ct-token-type'),
+            envPrefix: 'NULLIFIER_TYPE',
+            name: 'nullifier-type',
+            path: path.join(releaseDir, 'nullifier-type'),
         },
         {
-            envPrefix: 'CT_INFO_TYPE',
-            name: 'ct-info-type',
-            path: path.join(releaseDir, 'ct-info-type'),
+            envPrefix: 'ZK_MEMBERSHIP_TYPE',
+            name: 'zk-membership-type',
+            path: path.join(releaseDir, 'zk-membership-type'),
         },
     ];
 
-    console.log('=== Aggron Obscell Contract Deployment (Lumos) ===');
-    const results: Record<string, DeployResult> = { ...existingResults };
-
-    for (const target of targets) {
-        const envResult = getResultFromEnv(target.envPrefix);
-        if (envResult) {
-            console.log(`Skipping ${target.name}; found existing deployment in .env`);
-            results[target.envPrefix] = envResult;
-            continue;
-        }
-
-        if (results[target.envPrefix]) {
-            console.log(`Skipping ${target.name}; found existing deployment in obscell_deployment_results.json`);
-            continue;
-        }
-
-        const result = await deployBinary(target.path, privateKey, target.name);
-        results[target.envPrefix] = result;
-        fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
-        const { waitForTransaction } = await import('./lumos-common');
-        await waitForTransaction(result.txHash);
-    }
+    console.log('=== Aggron Contract Deployment (CCC) ===');
+    
+    const results = await deployAllBinaries(targets, privateKey);
+    
+    const sampleTxHash = Object.values(results)[0].txHash;
+    await waitForTransaction(sampleTxHash);
 
     fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
 

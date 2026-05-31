@@ -78,6 +78,7 @@ export async function registerCoordinatorDepositCommitment(
     payload: {
         commitment: string;
         blindingFactor: string;
+        zkCommitment: string;
         depositTxHash: string;
         inputOutPoint: string;
         noteCreatedAt: number;

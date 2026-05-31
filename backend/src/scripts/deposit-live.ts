@@ -1,22 +1,21 @@
 import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
-import { helpers, commons, config as lumosConfig } from '@ckb-lumos/lumos';
-import { getRpc, getIndexer, getDeployerAddress, buildAndSendTransaction, waitForTransaction, SHANNONS, DEFAULT_FEE_RATE } from './lumos-common.js';
-import { deriveCommitment, randomBlindingFactor } from '../mixer-sdk/src/utils/crypto.js';
-import { generateStealthAddress } from '../mixer-sdk/src/operations/address.js';
+import { ccc } from '@ckb-ccc/core';
+import { getClient, getSigner, waitForTransaction, SHANNONS } from './ccc-common.js';
+import { deriveCommitment, randomBlindingFactor, generateStealthAddress } from 'mixer-sdk';
 
 async function main() {
     console.log('=== CKB Privacy Mixer: Solo Live Deposit ===');
     
-    // 1. Setup Lumos
-    lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
-    const indexer = getIndexer();
+    // 1. Setup CCC
+    const client = getClient();
     
     // 2. Load Owner Private Key
     const privateKey = process.env.OWNER_PRIVATE_KEY;
     if (!privateKey) throw new Error('OWNER_PRIVATE_KEY is missing in .env');
-    const ownerAddress = getDeployerAddress(privateKey);
+    const signer = getSigner(client, privateKey);
+    const ownerAddress = await signer.getRecommendedAddress();
     console.log(`Funder Address: ${ownerAddress}`);
 
     // 3. Generate a deposit configuration
@@ -32,49 +31,26 @@ async function main() {
     console.log(`Amount: ${denomination} CT (${capacityNeeded} shannons)`);
 
     // 4. Build the real CKB transaction
-    let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
+    const stealthAddressObj = await ccc.Address.fromString(stealthOutputAddress, client);
+    
+    const cccTx = ccc.Transaction.from({});
 
     // Send 100 CKB to the stealth address
-    txSkeleton = txSkeleton.update('outputs', (outputs) =>
-        outputs.push({
-            cellOutput: {
-                capacity: `0x${capacityNeeded.toString(16)}`,
-                lock: helpers.parseAddress(stealthOutputAddress, { config: lumosConfig.predefined.AGGRON4 }),
-            },
-            data: '0x',
-        })
-    );
+    cccTx.addOutput({
+        capacity: ccc.numFrom(capacityNeeded),
+        lock: stealthAddressObj.script,
+    }, '0x');
 
-    // Pay for the transaction
-    txSkeleton = await commons.common.injectCapacity(
-        txSkeleton,
-        [ownerAddress],
-        capacityNeeded,
-        undefined,
-        undefined,
-        { config: lumosConfig.getConfig() }
-    );
-
-    txSkeleton = await commons.common.payFeeByFeeRate(
-        txSkeleton,
-        [ownerAddress],
-        DEFAULT_FEE_RATE,
-        undefined,
-        { config: lumosConfig.getConfig() }
-    );
-
-    txSkeleton = commons.common.prepareSigningEntries(txSkeleton, {
-        config: lumosConfig.getConfig(),
-    });
+    // Let CCC gather inputs and pay fee
+    await cccTx.completeInputsByCapacity(signer);
+    await cccTx.completeFeeBy(signer, 1000);
 
     // 5. Sign and Submit
     console.log('Submitting transaction to Pudge...');
-    const { txHash, duplicated } = await buildAndSendTransaction(txSkeleton, privateKey);
+    const txHash = await signer.sendTransaction(cccTx);
     console.log(`Transaction Hash: ${txHash}`);
     
-    if (!duplicated) {
-        await waitForTransaction(txHash);
-    }
+    await waitForTransaction(txHash);
 
     // 6. Generate the Deposit Note
     const sessionId = `live_solo_${Date.now().toString(16)}`;
@@ -85,7 +61,7 @@ async function main() {
     const leafIndex = 0;
     const sessionCommitments = [commitment];
     
-    // The outpoint of the newly created cell (it was the first output in our skeleton)
+    // The outpoint of the newly created cell (it was the first output)
     const outPoint = `${txHash}_0x0`;
     
     const note = {

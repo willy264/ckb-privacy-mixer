@@ -40,7 +40,7 @@ function validateNote(note: DepositNote) {
         throw new Error('Missing stealthOutputAddress in deposit note');
     }
 
-    const blindingFactor = normalizeHex(note.blindingFactor);
+    const blindingFactor = normalizeHex(note.blindingFactor!);
     if (!/^[0-9a-fA-F]{64}$/.test(blindingFactor)) {
         throw new Error('Deposit note blindingFactor must be a 32-byte hex string');
     }
@@ -53,7 +53,7 @@ function validateRegistryCell(registryCell: NullifierRegistryCell) {
 }
 
 function resolveRecipientLock(note: DepositNote, recipientLock?: string): string {
-    return recipientLock ?? note.stealthOutputAddress;
+    return recipientLock ?? note.stealthOutputAddress!;
 }
 
 function serializeRegistryDataHex(nullifiers: string[]): string {
@@ -98,7 +98,9 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
         ...contracts,
     };
 
-    const derivedNullifier = await deriveNullifier(note.blindingFactor, note.sessionId);
+    const noteBlindingFactor = note.blindingFactor!;
+    const noteSessionId = note.sessionId;
+    const derivedNullifier = await deriveNullifier(noteBlindingFactor, noteSessionId);
     if (proof.publicInputs.nullifier !== derivedNullifier) {
         throw new Error('Proof public inputs nullifier does not match the deposit note');
     }
@@ -257,7 +259,7 @@ export async function withdrawMix(
 ): Promise<string> {
     validateNote(note);
 
-    const nullifier = normalizeHex(await deriveNullifier(note.blindingFactor, note.sessionId));
+    const nullifier = normalizeHex(await deriveNullifier(note.blindingFactor!, note.sessionId));
     if (SPENT_NULLIFIERS.has(nullifier)) {
         throw new Error(`Nullifier already used: ${nullifier}`);
     }

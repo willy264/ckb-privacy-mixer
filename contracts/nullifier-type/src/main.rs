@@ -1,8 +1,7 @@
 #![no_std]
 #![no_main]
 
-#[cfg(any(feature = "library", test))]
-extern crate alloc;
+
 
 use ckb_std::{
     ckb_constants::Source,

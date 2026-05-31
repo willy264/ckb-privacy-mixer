@@ -1,8 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { RPC, helpers, config as lumosConfig } from '@ckb-lumos/lumos';
-import { blockchain } from '@ckb-lumos/base';
-import { deriveCommitment } from 'mixer-sdk/dist/utils/crypto.js';
+import { ccc } from '@ckb-ccc/core';
+import { deriveCommitment } from 'mixer-sdk';
 import { getDepositPool, markDepositPoolFinalized, summarizeDepositPool, type DepositPool } from './deposit-pool.js';
 import { logger } from '../utils/logger.js';
 
@@ -36,11 +35,11 @@ function parseSignaturePayload(signaturePayload: string) {
 }
 
 function buildStealthLockScript(args: string) {
-    return {
+    return ccc.Script.from({
         codeHash: process.env.STEALTH_LOCK_CODE_HASH!,
         hashType: process.env.STEALTH_LOCK_HASH_TYPE! as 'type' | 'data' | 'data1',
         args,
-    };
+    });
 }
 
 function assertReadyParticipants(pool: DepositPool) {
@@ -56,13 +55,7 @@ function assertReadyParticipants(pool: DepositPool) {
     return participants.slice(0, pool.targetParticipants);
 }
 
-async function fetchLiveCell(rpc: RPC, txHash: string, index: string) {
-    const liveCell = await rpc.getLiveCell({ txHash, index } as any, true);
-    if (!liveCell.cell || liveCell.status !== 'live') {
-        throw new Error(`Live cell ${txHash}:${index} not found for deposit finalization.`);
-    }
-    return liveCell as typeof liveCell & { cell: NonNullable<typeof liveCell.cell> };
-}
+// Removed fetchLiveCell since we'll use client.getCell directly
 
 async function runRoundHelper(amount: bigint, count: number): Promise<RoundHelperOutput> {
     const { stdout } = await execFileAsync(
@@ -74,7 +67,6 @@ async function runRoundHelper(amount: bigint, count: number): Promise<RoundHelpe
 }
 
 export async function buildUnsignedDepositFinalization(poolId: string) {
-    lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
     const pool = await getDepositPool(poolId);
     if (!pool) {
         throw new Error(`Deposit pool not found: ${poolId}`);
@@ -82,20 +74,18 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
 
     const participants = assertReadyParticipants(pool);
     const shuffled = [...participants].sort((left, right) => left.participantId.localeCompare(right.participantId));
-    const rpc = new RPC(process.env.CKB_RPC_URL!);
+    const client = new ccc.ClientPublicTestnet({ url: process.env.CKB_RPC_URL! });
     const roundHelper = await runRoundHelper(100n, shuffled.length);
-    let txSkeleton = helpers.TransactionSkeleton({});
+    const cccTx = ccc.Transaction.from({});
 
     for (const participant of participants) {
         const [txHash, index] = participant.inputOutPoint!.split(':');
-        const liveCell = await fetchLiveCell(rpc, txHash, index);
-        txSkeleton = txSkeleton.update('inputs', (inputs: any) =>
-            inputs.push({
-                outPoint: { txHash, index },
-                cellOutput: liveCell.cell.output,
-                data: liveCell.cell.data.content,
-            } as any),
-        );
+        const indexHex = ccc.numToHex(index.startsWith('0x') ? index : parseInt(index, 10));
+        
+        cccTx.addInput({
+            previousOutput: { txHash, index: indexHex },
+            since: '0x0',
+        });
     }
 
     const outputIndexByParticipantId: Record<string, number> = {};
@@ -106,18 +96,16 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
     const feeAdjustedTotalChange = totalChangeCapacity - FINALIZATION_FEE_SHANNONS;
     const baseChangePerParticipant = feeAdjustedTotalChange / BigInt(shuffled.length);
     const remainder = feeAdjustedTotalChange % BigInt(shuffled.length);
-    shuffled.forEach((participant, index) => {
+    
+    for (let index = 0; index < shuffled.length; index++) {
+        const participant = shuffled[index];
         const capacityForThisOutput = baseChangePerParticipant + (index === 0 ? remainder : 0n);
-        txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
-            outputs.push({
-                cellOutput: {
-                    capacity: `0x${capacityForThisOutput.toString(16)}`,
-                    lock: helpers.parseAddress(participant.walletAddress, { config: lumosConfig.getConfig() }),
-                },
-                data: '0x',
-            } as any),
-        );
-    });
+        const lockObj = await ccc.Address.fromString(participant.walletAddress, client);
+        cccTx.addOutput({
+            capacity: ccc.numFrom(capacityForThisOutput),
+            lock: lockObj.script,
+        }, '0x');
+    }
 
     shuffled.forEach((participant, index) => {
         outputIndexByParticipantId[participant.participantId] = shuffled.length + index;
@@ -125,53 +113,67 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
         if (!commitmentHex) {
             throw new Error(`Missing generated round commitment for output ${index}`);
         }
-        txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
-            outputs.push({
-                cellOutput: {
-                    capacity: `0x${MIXED_OUTPUT_CAPACITY.toString(16)}`,
-                    lock: buildStealthLockScript(participant.stealthOutputAddress),
-                },
-                data: `${commitmentHex}${'00'.repeat(32)}`.replace(/^0x0x/, '0x'),
-            } as any),
-        );
+        cccTx.addOutput({
+            capacity: ccc.numFrom(MIXED_OUTPUT_CAPACITY),
+            lock: buildStealthLockScript(participant.stealthOutputAddress),
+        }, ccc.hexFrom(`${commitmentHex}${'00'.repeat(32)}`.replace(/^0x0x/, '0x')));
     });
 
     if (process.env.STEALTH_LOCK_TX_HASH) {
-        txSkeleton = txSkeleton.update('cellDeps', (cellDeps: any) =>
-            cellDeps.push({
-                outPoint: {
-                    txHash: process.env.STEALTH_LOCK_TX_HASH!,
-                    index: process.env.STEALTH_LOCK_INDEX ?? '0x0',
-                },
-                depType: 'code',
-            }),
-        );
+        cccTx.addCellDeps({
+            outPoint: {
+                txHash: process.env.STEALTH_LOCK_TX_HASH!,
+                index: ccc.numToHex(process.env.STEALTH_LOCK_INDEX ?? '0x0'),
+            },
+            depType: 'code',
+        });
     }
 
-    const inputWitnessPlaceholder = `0x${Buffer.from(
-        blockchain.WitnessArgs.pack({
-            lock: new Uint8Array(65),
-            inputType: undefined,
-            outputType: undefined,
-        }),
-    ).toString('hex')}`;
-    const ctTokenWitness = `0x${Buffer.from(
-        blockchain.WitnessArgs.pack({
-            lock: undefined,
-            inputType: undefined,
-            outputType: Buffer.from(roundHelper.range_proof_hex.slice(2), 'hex'),
-        }),
-    ).toString('hex')}`;
+    const inputWitnessPlaceholder = ccc.hexFrom(ccc.WitnessArgs.from({ lock: '0x' + '00'.repeat(65) }).toBytes());
+    const ctTokenWitness = ccc.hexFrom(ccc.WitnessArgs.from({ outputType: roundHelper.range_proof_hex }).toBytes());
 
     for (let i = 0; i < participants.length; i += 1) {
-        txSkeleton = txSkeleton.update('witnesses', (witnesses: any) => witnesses.push(inputWitnessPlaceholder));
+        cccTx.witnesses.push(inputWitnessPlaceholder);
     }
     for (let i = 0; i < shuffled.length; i += 1) {
-        txSkeleton = txSkeleton.update('witnesses', (witnesses: any) => witnesses.push('0x'));
+        cccTx.witnesses.push('0x');
     }
-    txSkeleton = txSkeleton.update('witnesses', (witnesses: any) => witnesses.push(ctTokenWitness));
+    cccTx.witnesses.push(ctTokenWitness);
 
-    const rawTransaction = helpers.createTransactionFromSkeleton(txSkeleton);
+    const txObj = {
+        version: ccc.numToHex(cccTx.version),
+        cellDeps: cccTx.cellDeps.map((d) => ({
+            outPoint: {
+                txHash: d.outPoint.txHash,
+                index: ccc.numToHex(d.outPoint.index),
+            },
+            depType: d.depType,
+        })),
+        headerDeps: cccTx.headerDeps,
+        inputs: cccTx.inputs.map((i) => ({
+            previousOutput: {
+                txHash: i.previousOutput.txHash,
+                index: ccc.numToHex(i.previousOutput.index),
+            },
+            since: ccc.numToHex(i.since),
+        })),
+        outputs: cccTx.outputs.map((o) => ({
+            capacity: ccc.numToHex(o.capacity),
+            lock: {
+                codeHash: o.lock.codeHash,
+                hashType: o.lock.hashType,
+                args: o.lock.args,
+            },
+            type: o.type ? {
+                codeHash: o.type.codeHash,
+                hashType: o.type.hashType,
+                args: o.type.args,
+            } : undefined,
+        })),
+        outputsData: cccTx.outputsData,
+        witnesses: cccTx.witnesses,
+    };
+
     return {
         pool: summarizeDepositPool(pool),
         participants: participants.map(participant => ({
@@ -180,7 +182,7 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
             inputOutPoint: participant.inputOutPoint!,
             stealthOutputAddress: participant.stealthOutputAddress,
         })),
-        rawTransaction,
+        rawTransaction: txObj,
         outputIndexByParticipantId,
         rangeProofHex: roundHelper.range_proof_hex,
     };
@@ -216,8 +218,9 @@ export async function finalizeSignedDepositRound(poolId: string, signedTransacti
         witnesses: mergedWitnesses,
     };
 
-    const rpc = new RPC(process.env.CKB_RPC_URL!);
-    const txHash = await rpc.sendTransaction(finalTransaction, 'passthrough');
+    const client = new ccc.ClientPublicTestnet({ url: process.env.CKB_RPC_URL! });
+    const cccTx = ccc.Transaction.from(finalTransaction as any);
+    const txHash = await client.sendTransaction(cccTx);
 
     const finalizedCommitments = await Promise.all(
         unsigned.participants.map(async (participant) => {

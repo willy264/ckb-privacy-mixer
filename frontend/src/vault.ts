@@ -7,7 +7,9 @@ export interface DepositNote {
   version?: 2;
   sessionId: string;
   inputOutPoint: string;
-  blindingFactor: string;
+  blindingFactor?: string;
+  secret: string;
+  nullifierSecret: string;
   stealthOutputAddress: string;
   createdAt: number;
   commitment?: string;
@@ -139,6 +141,8 @@ function migrateNote(note: any): DepositNote {
       : note.commitment
         ? [note.commitment]
         : undefined,
+    secret: note.secret || '0x0000000000000000000000000000000000000000000000000000000000000000',
+    nullifierSecret: note.nullifierSecret || '0x0000000000000000000000000000000000000000000000000000000000000000',
     nullifier: note.nullifier,
     leafIndex: typeof note.leafIndex === 'number' ? note.leafIndex : undefined,
     merkleRoot: note.merkleRoot,

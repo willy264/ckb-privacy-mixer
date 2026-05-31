@@ -6,8 +6,8 @@ import type {
     WithdrawalPublicInputs,
     WithdrawalWitnessBundle,
 } from '../types/proof';
-import { deriveNullifier } from './crypto';
-import { bytesToHex, concatBytes, hexToBytes, u32LeBytes, utf8ToBytes } from './encoding';
+import { deriveNullifierHash } from './crypto';
+import { bytesToHex, concatBytes, hexToBytes, u32LeBytes } from './encoding';
 import { generateMerkleProof, verifyMerkleProof } from './merkle';
 import { generateProof, packGroth16Proof, GROTH16_PROOF_ENCODING } from './prover';
 
@@ -34,19 +34,18 @@ function resolveCommitment(note: DepositNote): string {
 }
 
 export function serializeMembershipWitness(bundle: WithdrawalWitnessBundle): Uint8Array {
-    const sessionBytes = utf8ToBytes(bundle.sessionId);
     const commitmentBytes = hexToBytes(bundle.commitment);
-    const blindingBytes = hexToBytes(bundle.blindingFactor);
+    const secretBytes = hexToBytes(bundle.secret);
+    const nullifierBytes = hexToBytes(bundle.nullifier);
     const siblingsBytes = bundle.proof.siblings.map(hexToBytes);
     const pathBytes = Uint8Array.from(
         bundle.proof.pathDirections.map(direction => (direction === 'left' ? 0 : 1)),
     );
 
     return concatBytes(
-        u32LeBytes(sessionBytes.length),
-        sessionBytes,
         commitmentBytes,
-        blindingBytes,
+        secretBytes,
+        nullifierBytes,
         u32LeBytes(bundle.proof.leafIndex),
         u32LeBytes(bundle.proof.siblings.length),
         ...siblingsBytes,
@@ -57,7 +56,8 @@ export function serializeMembershipWitness(bundle: WithdrawalWitnessBundle): Uin
 export function serializeWithdrawalPublicInputs(publicInputs: WithdrawalPublicInputs): Uint8Array {
     const root = hexToBytes(publicInputs.merkleRoot).reverse();
     const nullifier = hexToBytes(publicInputs.nullifier).reverse();
-    return concatBytes(root, nullifier);
+    const recipient = hexToBytes(publicInputs.recipientHash).reverse();
+    return concatBytes(root, nullifier, recipient);
 }
 
 export function serializeWithdrawalPublicInputsHex(publicInputs: WithdrawalPublicInputs): string {
@@ -72,24 +72,27 @@ export async function buildWithdrawalProof(
 ): Promise<LocalWithdrawalProofResult> {
     const commitment = resolveCommitment(note);
     const proof = await generateMerkleProof(tree, leafIndex);
-    const nullifier = await deriveNullifier(note.blindingFactor, note.sessionId);
+    const nullifierHash = await deriveNullifierHash(note.nullifierSecret);
 
     note.leafIndex = leafIndex;
     note.merkleRoot = tree.root;
     note.merkleProof = proof;
-    note.nullifier = nullifier;
+
+    const recipientHash = '0x' + (BigInt(`0x${crypto.createHash('sha256').update(note.stealthOutputAddress).digest('hex')}`)
+        % 21888242871839275222246405745257275088548364400416034343698204186575808495617n).toString(16).padStart(64, '0');
 
     const publicInputs: WithdrawalPublicInputs = {
         merkleRoot: tree.root,
-        nullifier,
+        nullifier: nullifierHash,
+        recipientHash,
         denomination,
         outputStealthAddress: note.stealthOutputAddress,
     };
 
     const witnessBundle: WithdrawalWitnessBundle = {
         commitment,
-        blindingFactor: note.blindingFactor,
-        sessionId: note.sessionId,
+        secret: note.secret,
+        nullifier: note.nullifierSecret,
         proof,
     };
 
@@ -108,8 +111,8 @@ export async function reconstructWithdrawalProof(
     if (!note.commitment) {
         throw new Error('Deposit note is missing commitment');
     }
-    if (!note.nullifier) {
-        throw new Error('Deposit note is missing nullifier');
+    if (!note.nullifierSecret) {
+        throw new Error('Deposit note is missing nullifierSecret');
     }
     if (!note.merkleRoot) {
         throw new Error('Deposit note is missing merkleRoot');
@@ -118,17 +121,23 @@ export async function reconstructWithdrawalProof(
         throw new Error('Deposit note is missing merkleProof');
     }
 
+    const nullifierHash = await deriveNullifierHash(note.nullifierSecret);
+
+    const recipientHash = '0x' + (BigInt(`0x${crypto.createHash('sha256').update(note.stealthOutputAddress).digest('hex')}`)
+        % 21888242871839275222246405745257275088548364400416034343698204186575808495617n).toString(16).padStart(64, '0');
+
     const publicInputs: WithdrawalPublicInputs = {
         merkleRoot: note.merkleRoot,
-        nullifier: note.nullifier,
+        nullifier: nullifierHash,
+        recipientHash,
         denomination,
         outputStealthAddress: note.stealthOutputAddress,
     };
 
     const witnessBundle: WithdrawalWitnessBundle = {
         commitment: note.commitment,
-        blindingFactor: note.blindingFactor,
-        sessionId: note.sessionId,
+        secret: note.secret,
+        nullifier: note.nullifierSecret,
         proof: note.merkleProof,
     };
 
@@ -170,16 +179,12 @@ export async function buildRealWithdrawalProof(
 ): Promise<LocalWithdrawalProofResult> {
     const base = await buildWithdrawalProof(note, tree, leafIndex, denomination);
 
-    const sid = note.sessionId.startsWith('0x')
-        ? BigInt(note.sessionId)
-        : BigInt(`0x${crypto.createHash('sha256').update(note.sessionId).digest('hex')}`)
-              % 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-
     const input = {
         root: BigInt(tree.root),
         nullifierHash: BigInt(base.publicInputs.nullifier),
-        blindingFactor: BigInt(note.blindingFactor),
-        sessionId: sid,
+        recipient: BigInt(base.publicInputs.recipientHash),
+        secret: BigInt(note.secret),
+        nullifier: BigInt(note.nullifierSecret),
         pathElements: base.witnessBundle.proof.siblings.map(value => BigInt(value)),
         pathIndices: base.witnessBundle.proof.pathDirections.map(direction => (direction === 'left' ? 0 : 1)),
     };

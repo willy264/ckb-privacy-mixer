@@ -1,8 +1,7 @@
 #![no_std]
 #![no_main]
 
-#[cfg(any(feature = "library", test))]
-extern crate alloc;
+
 
 use ckb_std::{
     ckb_constants::Source,
@@ -20,7 +19,7 @@ ckb_std::entry!(program_entry);
 ckb_std::default_alloc!(16384, 1258306, 64);
 
 const HASH_BYTES: usize = 32;
-const PUBLIC_INPUTS_BYTES: usize = HASH_BYTES * 2;
+const PUBLIC_INPUTS_BYTES: usize = HASH_BYTES * 3;
 
 pub fn program_entry() -> i8 {
     match validate() {
@@ -58,13 +57,15 @@ fn validate() -> Result<(), Error> {
         return Err(Error::InvalidProofData);
     }
     
-    // Public Inputs: [root, nullifierHash]
+    // Public Inputs: [root, nullifierHash, recipient]
     let root_bytes: [u8; 32] = output_data[..32].try_into().map_err(|_| Error::InvalidProofData)?;
     let nullifier_bytes: [u8; 32] = output_data[32..64].try_into().map_err(|_| Error::InvalidProofData)?;
+    let recipient_bytes: [u8; 32] = output_data[64..96].try_into().map_err(|_| Error::InvalidProofData)?;
 
     let public_inputs = vec![
         Fr::from_le_bytes_mod_order(&root_bytes[..]),
         Fr::from_le_bytes_mod_order(&nullifier_bytes[..]),
+        Fr::from_le_bytes_mod_order(&recipient_bytes[..]),
     ];
 
     let witness_args = load_witness_args(0, Source::Input).map_err(|_| Error::InvalidProofData)?;

@@ -52,35 +52,37 @@ template MerkleTreeChecker(levels) {
 }
 
 // The main Mixer circuit
-// Proves that a specific (blindingFactor, sessionId) exists in the tree
+// Proves that a specific (secret, nullifier) exists in the tree
 // and outputs the corresponding nullifier
 template Mixer(levels) {
     // Public Inputs
     signal input root;
     signal input nullifierHash;
+    signal input recipient;
 
     // Private Inputs
-    signal input blindingFactor;
-    signal input sessionId;
+    signal input secret;
+    signal input nullifier;
     signal input pathElements[levels];
     signal input pathIndices[levels];
 
     // 1. Derive the leaf commitment
-    // In a real system, this might be a Pedersen commitment or just a Poseidon hash.
-    // Here we use Poseidon(blindingFactor, sessionId) as the leaf.
+    // leaf = Poseidon(secret, nullifier)
     component leafHasher = Poseidon(2);
-    leafHasher.inputs[0] <== blindingFactor;
-    leafHasher.inputs[1] <== sessionId;
+    leafHasher.inputs[0] <== secret;
+    leafHasher.inputs[1] <== nullifier;
     signal leaf <== leafHasher.out;
 
     // 2. Derive the nullifier
-    // nullifier = Poseidon(blindingFactor, sessionId, 1) to make it unique from leaf
-    component nullifierHasher = Poseidon(3);
-    nullifierHasher.inputs[0] <== blindingFactor;
-    nullifierHasher.inputs[1] <== sessionId;
-    nullifierHasher.inputs[2] <== 1;
+    // nullifierHash = Poseidon(nullifier)
+    component nullifierHasher = Poseidon(1);
+    nullifierHasher.inputs[0] <== nullifier;
     
     nullifierHash === nullifierHasher.out;
+
+    // Bind recipient to the proof to prevent front-running
+    signal recipientSquare;
+    recipientSquare <== recipient * recipient;
 
     // 3. Verify Merkle Proof
     component tree = MerkleTreeChecker(levels);
@@ -92,4 +94,4 @@ template Mixer(levels) {
     }
 }
 
-component main {public [root, nullifierHash]} = Mixer(8);
+component main {public [root, nullifierHash, recipient]} = Mixer(20);

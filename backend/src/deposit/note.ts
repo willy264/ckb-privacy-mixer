@@ -1,10 +1,12 @@
-import { deriveNullifier } from 'mixer-sdk/dist/utils/crypto.js';
-import type { DepositNote } from 'mixer-sdk/dist/types/note.js';
+import { deriveNullifier } from 'mixer-sdk';
+import type { DepositNote } from 'mixer-sdk';
 
 export interface MintedCtNoteParams {
     sessionId: string;
     inputOutPoint: string;
     blindingFactor: string;
+    secret?: string;
+    nullifierSecret?: string;
     stealthOutputAddress: string;
     commitment: string;
     depositTxHash: string;
@@ -18,6 +20,8 @@ export async function buildMintedCtNote(params: MintedCtNoteParams): Promise<Dep
         sessionId: params.sessionId,
         inputOutPoint: params.inputOutPoint,
         blindingFactor: params.blindingFactor,
+        secret: params.secret ?? params.blindingFactor,
+        nullifierSecret: params.nullifierSecret ?? params.blindingFactor,
         stealthOutputAddress: params.stealthOutputAddress,
         createdAt: Date.now(),
         commitment: params.commitment as `0x${string}`,

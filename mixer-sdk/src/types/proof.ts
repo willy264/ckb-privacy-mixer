@@ -22,14 +22,15 @@ export interface MerkleTreeSnapshot {
 export interface WithdrawalPublicInputs {
     merkleRoot: HexString;
     nullifier: HexString;
+    recipientHash: HexString;
     denomination: bigint;
     outputStealthAddress: string;
 }
 
 export interface WithdrawalWitnessBundle {
     commitment: HexString;
-    blindingFactor: HexString;
-    sessionId: string;
+    secret: HexString;
+    nullifier: HexString;
     proof: MerkleProof;
 }
 

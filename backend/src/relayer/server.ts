@@ -13,6 +13,7 @@ import {
 } from '../coordinator/client.js';
 import { logger } from '../utils/logger.js';
 import { redis } from '../utils/redis.js';
+import { initWaku, subscribeToWakuMessages, publishWakuMessage } from 'mixer-sdk';
 
 import { rateLimit } from 'express-rate-limit';
 
@@ -176,4 +177,56 @@ export function createRelayerApp() {
     });
 
     return app;
+}
+
+/**
+ * Start a Waku P2P listener for relay requests.
+ *
+ * This runs alongside the Express HTTP server. Users broadcast withdrawal
+ * intents to the Waku network; the relayer picks them up, processes them,
+ * and broadcasts the result back over Waku.
+ *
+ * This is the decentralized transport layer — no public endpoint required.
+ */
+export async function startWakuRelayListener() {
+    const cfg = loadRelayerConfig();
+    const wallet = new RelayerWallet(cfg);
+
+    logger.info('[Relayer/Waku] Initializing Waku light node...');
+    const waku = await initWaku();
+    logger.info('[Relayer/Waku] Connected to Waku network. Listening for withdrawal_request messages.');
+
+    await subscribeToWakuMessages(waku, 'withdrawal_request', async (payload: any) => {
+        try {
+            const request: RelayRequest = {
+                nullifierHex: payload.nullifierHex,
+                transaction: payload.transaction,
+            };
+
+            logger.info('[Relayer/Waku] Received withdrawal request via P2P', {
+                nullifier: request.nullifierHex.slice(0, 18) + '...',
+            });
+
+            const result = await submitRelay(request, wallet, cfg);
+
+            // Broadcast the result back over Waku so the user can track it
+            await publishWakuMessage(waku, 'withdrawal_result', {
+                jobId: result.jobId,
+                status: result.status,
+                txHash: result.txHash,
+                nullifierHex: result.nullifierHex,
+            });
+
+            logger.info('[Relayer/Waku] Published withdrawal result', {
+                jobId: result.jobId,
+                status: result.status,
+            });
+        } catch (err) {
+            logger.error('[Relayer/Waku] Failed to process withdrawal request', {
+                error: String(err),
+            });
+        }
+    });
+
+    return waku;
 }

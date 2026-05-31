@@ -1,8 +1,8 @@
 import crypto from 'crypto';
 import { z } from 'zod';
-import { AggronWithdrawalProvider } from 'mixer-sdk/dist/providers/withdrawal.js';
-import { loadMixerRuntimeConfig } from 'mixer-sdk/dist/utils/config.js';
-import type { WithdrawalTransaction } from 'mixer-sdk/dist/types/withdrawal.js';
+import { AggronWithdrawalProvider } from 'mixer-sdk';
+import { loadMixerRuntimeConfig } from 'mixer-sdk';
+import type { WithdrawalTransaction } from 'mixer-sdk';
 import type { RelayerConfig } from './config.js';
 import type { RelayerWallet } from './wallet.js';
 import { logger } from '../utils/logger.js';

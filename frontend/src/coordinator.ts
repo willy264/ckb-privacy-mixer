@@ -1,4 +1,6 @@
-import { getRelayerUrl } from './relayer';
+import { getRelayerUrl, getWaku } from './relayer';
+import { publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk';
+
 
 export interface CoordinatorPoolSummary {
     poolId: string;
@@ -20,26 +22,45 @@ export type CoordinatorEventHandler = {
 export class CoordinatorClient {
     private ws: WebSocket | null = null;
     private endpoint: string;
+    private wakuHandlers: CoordinatorEventHandler | null = null;
+    private wakuMode = false;
 
     constructor(endpoint?: string) {
-        // Derive WS url from HTTP relayer url
+        this.wakuMode = (import.meta as any).env?.VITE_USE_WAKU === 'true';
         const base = endpoint ?? getRelayerUrl();
-        // The backend coordinator listens on port 4001, relayer on 4000
-        // We'll just replace 4000 with 4001 and http with ws
         this.endpoint = base.replace('http', 'ws').replace('4000', '4001');
     }
 
-    connect(handlers: CoordinatorEventHandler): Promise<void> {
+    async connect(handlers: CoordinatorEventHandler): Promise<void> {
+        if (this.wakuMode) {
+            this.wakuHandlers = handlers;
+            const waku = await getWaku();
+            
+            await subscribeToWakuMessages(waku, 'pool_joined', (msg: any) => {
+                this.wakuHandlers?.onJoined?.(msg.poolId, msg.participantId, msg.pool);
+            });
+            await subscribeToWakuMessages(waku, 'pool_update', (msg: any) => {
+                this.wakuHandlers?.onPoolUpdate?.(msg.pool);
+            });
+            await subscribeToWakuMessages(waku, 'pool_full', (msg: any) => {
+                this.wakuHandlers?.onPoolFull?.(msg.poolId, msg.pendingTxHex);
+            });
+            await subscribeToWakuMessages(waku, 'coinjoin_broadcast', (msg: any) => {
+                this.wakuHandlers?.onBroadcast?.(msg.poolId, msg.txHash, msg.sessionCommitments || []);
+            });
+            await subscribeToWakuMessages(waku, 'coinjoin_error', (msg: any) => {
+                this.wakuHandlers?.onError?.(msg.message);
+            });
+            
+            // Connected immediately for Waku since we await getWaku()
+            return;
+        }
+
         return new Promise((resolve, reject) => {
             this.ws = new WebSocket(this.endpoint);
 
-            this.ws.onopen = () => {
-                resolve();
-            };
-
-            this.ws.onerror = () => {
-                reject(new Error('WebSocket connection failed'));
-            };
+            this.ws.onopen = () => resolve();
+            this.ws.onerror = () => reject(new Error('WebSocket connection failed'));
 
             this.ws.onmessage = (event) => {
                 try {
@@ -60,8 +81,6 @@ export class CoordinatorClient {
                         case 'error':
                             handlers.onError?.(msg.message);
                             break;
-                        default:
-                            console.warn('Unknown coordinator message:', msg);
                     }
                 } catch (e) {
                     console.error('Failed to parse coordinator message', e);
@@ -70,7 +89,18 @@ export class CoordinatorClient {
         });
     }
 
-    joinPool(denomination: string, commitment: string, stealthOutputAddress: string, walletAddress: string) {
+    async joinPool(denomination: string, commitment: string, stealthOutputAddress: string, walletAddress: string) {
+        if (this.wakuMode) {
+            const waku = await getWaku();
+            await publishWakuMessage(waku, 'deposit_intent', {
+                denomination,
+                commitment,
+                stealthOutputAddress,
+                walletAddress,
+            });
+            return;
+        }
+
         this.send({
             type: 'join',
             denomination,
@@ -80,7 +110,17 @@ export class CoordinatorClient {
         });
     }
 
-    signTransaction(poolId: string, participantId: string, signature: string) {
+    async signTransaction(poolId: string, participantId: string, signature: string) {
+        if (this.wakuMode) {
+            const waku = await getWaku();
+            await publishWakuMessage(waku, 'coinjoin_signature', {
+                poolId,
+                participantId,
+                signature,
+            });
+            return;
+        }
+
         this.send({
             type: 'sign',
             poolId,
@@ -90,6 +130,9 @@ export class CoordinatorClient {
     }
 
     disconnect() {
+        if (this.wakuMode) {
+            this.wakuHandlers = null;
+        }
         if (this.ws) {
             this.ws.close();
             this.ws = null;
@@ -107,7 +150,6 @@ export class CoordinatorClient {
 import { deriveCommitment, randomBlindingFactor } from '../../mixer-sdk/dist/index.js';
 import type { DepositResult } from '../../mixer-sdk/dist/index.js';
 import { signTransactionWithJoyId } from './joyid';
-import { ensureJoyIdCellDep } from './withdrawal';
 
 /**
  * Drop-in replacement for `mixer-sdk`'s local `joinMix`, but routes over
@@ -153,12 +195,12 @@ export async function joinLiveMix(params: {
                     const txToSign = JSON.parse(decodeURIComponent(escape(rawTxStr)));
                     
                     // Inject JoyID CellDep into transaction structure
-                    const unsignedTransaction = ensureJoyIdCellDep(txToSign as any);
+                    const unsignedTransaction = txToSign as any;
                     
                     // We prompt JoyID to sign our specific input. We don't have witnessIndexes
                     // but we can just sign the whole tx. For a real CoinJoin, each participant
                     // signs their own input. JoyID's signRawTransaction signs the entire message.
-                    const signedTx = await signTransactionWithJoyId(unsignedTransaction as any);
+                    const signedTx = await signTransactionWithJoyId(unsignedTransaction);
                     
                     // Send the full array of witnesses and cell deps so the coordinator can merge them
                     const payload = {

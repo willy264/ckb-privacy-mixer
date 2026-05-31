@@ -14,7 +14,6 @@ import type {
 } from '../types/withdrawal';
 import { reconstructWithdrawalProof } from '../utils/proof';
 import { normalizeHex } from '../utils/encoding';
-import { callJsonRpc } from '../utils/rpc';
 
 function parseOutPoint(value: string) {
     const [txHash, index] = value.split(':');
@@ -47,6 +46,38 @@ function normalizeCapacity(capacity: string): string {
 
 function isAddressLike(value: string): boolean {
     return value.startsWith('ckb1') || value.startsWith('ckt1');
+}
+
+function createCccClient(config: MixerRuntimeConfig) {
+    return new ccc.ClientPublicTestnet({
+        url: config.ckbRpcUrl,
+    });
+}
+
+async function parseAddressScriptWithCcc(address: string, config: MixerRuntimeConfig): Promise<CkbScript> {
+    const client = createCccClient(config);
+    const resolved = await ccc.Address.fromString(address, client);
+    const hashType = resolved.script.hashType === 'data2'
+        ? 'data1'
+        : resolved.script.hashType;
+    return {
+        codeHash: resolved.script.codeHash,
+        hashType,
+        args: resolved.script.args,
+    };
+}
+
+async function getKnownSecpCellDep(config: MixerRuntimeConfig): Promise<CkbCellDep> {
+    const client = createCccClient(config);
+    const scriptInfo = await client.getKnownScript(ccc.KnownScript.Secp256k1Blake160);
+    const cellDepInfo = scriptInfo.cellDeps[0];
+    return {
+        outPoint: {
+            txHash: cellDepInfo.cellDep.outPoint.txHash,
+            index: `0x${cellDepInfo.cellDep.outPoint.index.toString(16)}`,
+        },
+        depType: cellDepInfo.cellDep.depType,
+    };
 }
 
 function sameScript(left: CkbScript, right: CkbScript): boolean {
@@ -105,33 +136,34 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
         tx: WithdrawalTransaction,
         signerAddress: string,
     ): Promise<JoyIdSigningRequest> {
-        const { txSkeleton, helpers, networkConfig } = await this.buildSkeletonWithFeePayer(tx, signerAddress);
-        const signerLock = helpers.parseAddress(signerAddress, { config: networkConfig }) as CkbScript;
-        const inputs = txSkeleton.get('inputs').toArray();
-        const witnessIndexes = inputs.reduce<number[]>((indexes, input, index) => {
-            const inputLock = input.cellOutput.lock as CkbScript;
-            if (sameScript(inputLock, signerLock)) {
-                indexes.push(index);
+        const { cccTx, client } = await this.buildNativeCccTxWithFeePayer(tx, signerAddress);
+        const signerLock = (await ccc.Address.fromString(signerAddress, client)).script;
+        const inputs = cccTx.inputs;
+
+        const witnessIndexes = [];
+        for (let i = 0; i < inputs.length; i++) {
+            const cell = await client.getCell(inputs[i].previousOutput!);
+            if (!cell) throw new Error(`Cell not found for input ${i}`);
+            const inputLock = cell.cellOutput.lock;
+            if (inputLock.eq(signerLock)) {
+                witnessIndexes.push(i);
             }
-            return indexes;
-        }, []);
+        }
 
         if (witnessIndexes.length === 0) {
             throw new Error('The connected JoyID address does not control any withdrawal inputs.');
         }
 
         return {
-            transaction: helpers.createTransactionFromSkeleton(txSkeleton) as CkbTransaction,
+            transaction: cccTx as any,
             witnessIndexes,
             signerAddress,
         };
     }
 
     async broadcastSignedWithdrawal(tx: CkbTransaction): Promise<string> {
-        const client = new ccc.ClientPublicTestnet({
-            url: this.options.config.ckbRpcUrl,
-        });
-        return client.sendTransaction(tx as any, 'passthrough');
+        const client = createCccClient(this.options.config);
+        return client.sendTransaction(ccc.Transaction.from(tx as any));
     }
 
     async submitWithdrawal(tx: WithdrawalTransaction, privateKey?: string): Promise<string> {
@@ -139,62 +171,18 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             throw new Error('privateKey is required to submit a real withdrawal transaction');
         }
 
-        const client = new ccc.ClientPublicTestnet({
-            url: this.options.config.ckbRpcUrl,
-        });
+        const client = createCccClient(this.options.config);
         const signer = new ccc.SignerCkbPrivateKey(client, privateKey);
         const feePayerAddress = await signer.getRecommendedAddress();
-        let { txSkeleton } = await this.buildSkeletonWithFeePayer(tx, feePayerAddress);
-        const prepared = ccc.Transaction.fromLumosSkeleton(txSkeleton as any);
-        return signer.sendTransaction(prepared);
+        
+        const { cccTx } = await this.buildNativeCccTxWithFeePayer(tx, feePayerAddress);
+        return signer.sendTransaction(cccTx);
     }
 
-    private async buildSkeletonWithFeePayer(tx: WithdrawalTransaction, feePayerAddress: string) {
-        const { config: lumosConfig, Indexer, helpers, commons } = await import('@ckb-lumos/lumos');
-        lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
-
-        const rpcUrl = this.options.config.ckbRpcUrl;
-        const indexerUrl = this.options.config.ckbIndexerUrl || rpcUrl;
-        const networkConfig = lumosConfig.getConfig();
-        const indexer = new Indexer(indexerUrl, rpcUrl);
-
-        let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
-        txSkeleton = this.attachCellDeps(txSkeleton, tx, networkConfig);
-        txSkeleton = this.attachInputs(txSkeleton, tx, helpers, networkConfig);
-        txSkeleton = this.attachOutputs(txSkeleton, tx, helpers, networkConfig);
-
-        let capacityNeeded = 0n;
-        for (const output of txSkeleton.get('outputs')) {
-            capacityNeeded += BigInt(output.cellOutput.capacity);
-        }
-        for (const input of txSkeleton.get('inputs')) {
-            capacityNeeded -= BigInt(input.cellOutput.capacity);
-        }
-
-        if (capacityNeeded > 0n) {
-            txSkeleton = await commons.common.injectCapacity(
-                txSkeleton,
-                [feePayerAddress],
-                capacityNeeded,
-                undefined,
-                undefined,
-                { config: networkConfig },
-            );
-        }
-
-        txSkeleton = await commons.common.payFeeByFeeRate(
-            txSkeleton,
-            [feePayerAddress],
-            1000,
-            undefined,
-            { config: networkConfig },
-        );
-
-        txSkeleton = this.attachWitnesses(txSkeleton, tx.rawTransaction.witnesses[0]);
-        return { txSkeleton, helpers, networkConfig };
-    }
-
-    private attachCellDeps(txSkeleton: any, tx: WithdrawalTransaction, networkConfig: any) {
+    private async buildNativeCccTxWithFeePayer(tx: WithdrawalTransaction, feePayerAddress: string): Promise<{ cccTx: ccc.Transaction, client: ccc.Client }> {
+        const client = createCccClient(this.options.config);
+        const cccTx = ccc.Transaction.from({});
+        
         for (const dep of tx.rawTransaction.cellDeps) {
             const contractRef = typeof dep.contract === 'string'
                 ? this.options.config[dep.contract as keyof MixerRuntimeConfig]
@@ -202,133 +190,91 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             const contract = contractRef as ContractReference | undefined;
 
             if (contract?.txHash && contract.index) {
-                txSkeleton = this.pushCellDep(txSkeleton, {
+                cccTx.addCellDeps({
                     outPoint: {
                         txHash: contract.txHash,
-                        index: contract.index,
+                        index: ccc.numToHex(contract.index),
                     },
                     depType: contract.depType || 'code',
                 });
             }
         }
+        cccTx.addCellDeps(await getKnownSecpCellDep(this.options.config));
 
-        const secpTemplate = networkConfig.SCRIPTS.SECP256K1_BLAKE160!;
-        txSkeleton = this.pushCellDep(txSkeleton, {
-            outPoint: {
-                txHash: secpTemplate.TX_HASH,
-                index: secpTemplate.INDEX,
-            },
-            depType: secpTemplate.DEP_TYPE,
-        });
-
-        return txSkeleton;
-    }
-
-    private attachInputs(txSkeleton: any, tx: WithdrawalTransaction, helpers: any, networkConfig: any) {
         for (const input of tx.rawTransaction.inputs) {
             const outPoint = parseOutPoint(input.previousOutput);
-            txSkeleton = txSkeleton.update('inputs', (inputs: any) =>
-                inputs.push({
-                    cellOutput: {
-                        capacity: this.options.config.nullifierRegistry!.capacity ?? '0x2bf55b600',
-                        lock: this.parseRegistryLock(helpers, networkConfig),
-                        type: {
-                            codeHash: (this.options.config.nullifierType as ContractReference).codeHash,
-                            hashType: (this.options.config.nullifierType as ContractReference).hashType,
-                            args: this.options.config.nullifierRegistry!.typeArgs || '0x',
-                        },
-                    },
-                    data: '0x',
-                    outPoint,
-                } as any),
-            );
+            cccTx.addInput({
+                previousOutput: {
+                    txHash: outPoint.txHash,
+                    index: ccc.numToHex(outPoint.index),
+                },
+                since: '0x0',
+            });
         }
 
-        return txSkeleton;
-    }
-
-    private attachOutputs(txSkeleton: any, tx: WithdrawalTransaction, helpers: any, networkConfig: any) {
         for (let i = 0; i < tx.rawTransaction.outputs.length; i += 1) {
             const output = tx.rawTransaction.outputs[i];
             const data = tx.rawTransaction.outputsData[i];
 
-            txSkeleton = txSkeleton.update('outputs', (outputs: any) =>
-                outputs.push({
-                    cellOutput: {
-                        capacity: normalizeCapacity(output.capacity),
-                        lock: this.resolveLockScript(output.lock, helpers, networkConfig),
-                        type: this.resolveTypeScript(output.type, i),
-                    },
-                    data,
-                } as any),
-            );
+            cccTx.addOutput({
+                capacity: ccc.numFrom(output.capacity),
+                lock: await this.resolveLockScriptToCcc(output.lock, client),
+                type: this.resolveTypeScriptToCcc(output.type, i),
+            }, ccc.hexFrom(data));
         }
 
-        return txSkeleton;
-    }
+        const feePayerObj = await ccc.Address.fromString(feePayerAddress, client);
+        const dummySigner = new ccc.SignerCkbScriptReadonly(client, feePayerObj.script);
 
-    private attachWitnesses(txSkeleton: any, proofWitnessHex: string) {
-        const inputCount = txSkeleton.get('inputs').size;
-        const proofWitness = serializeProofWitness(proofWitnessHex);
+        await cccTx.completeInputsByCapacity(dummySigner);
+        await cccTx.completeFeeBy(dummySigner, 1000);
+
+        const inputCount = cccTx.inputs.length;
+        const proofWitness = serializeProofWitness(tx.rawTransaction.witnesses[0]);
         const emptyWitness = serializeEmptyLockWitness();
 
-        return txSkeleton.update('witnesses', (witnesses: any) => {
-            const list = witnesses.toArray();
-            while (list.length < inputCount) {
-                list.push('0x');
-            }
+        const witnesses: ccc.Hex[] = [];
+        witnesses[0] = proofWitness as ccc.Hex;
+        for (let i = 1; i < inputCount; i += 1) {
+            witnesses[i] = emptyWitness as ccc.Hex;
+        }
+        
+        cccTx.witnesses = witnesses;
 
-            list[0] = proofWitness;
-            for (let i = 1; i < inputCount; i += 1) {
-                if (!list[i] || list[i] === '0x') {
-                    list[i] = emptyWitness;
-                }
-            }
-
-            return witnesses.clear().push(...list);
-        });
+        return { cccTx, client };
     }
 
-    private pushCellDep(txSkeleton: any, cellDep: CkbCellDep) {
-        const key = `${cellDep.outPoint.txHash}:${cellDep.outPoint.index}:${cellDep.depType}`;
-        const existing = txSkeleton.get('cellDeps').some((dep: any) => {
-            const depKey = `${dep.outPoint.txHash}:${dep.outPoint.index}:${dep.depType}`;
-            return depKey === key;
-        });
-
-        if (existing) {
-            return txSkeleton;
+    private async resolveLockScriptToCcc(lock: string, client: ccc.Client): Promise<ccc.Script> {
+        const trimmed = lock.trim();
+        if (trimmed.startsWith('{')) {
+            return ccc.Script.from(JSON.parse(trimmed));
         }
 
-        return txSkeleton.update('cellDeps', (cellDeps: any) => cellDeps.push(cellDep));
+        if (isAddressLike(trimmed)) {
+            return (await ccc.Address.fromString(trimmed, client)).script;
+        }
+
+        if (trimmed.startsWith('0x')) {
+            const secp = await client.getKnownScript(ccc.KnownScript.Secp256k1Blake160);
+            return ccc.Script.from({
+                codeHash: secp.codeHash,
+                hashType: secp.hashType,
+                args: trimmed,
+            });
+        }
+
+        if (trimmed === 'always_success') {
+            return ccc.Script.from({
+                codeHash: '0x28e83a1277d48add8e72fadaa9248559e1b632bab2bd60b27955ebc4c03800a5',
+                hashType: 'type',
+                args: '0x',
+            });
+        }
+
+        throw new Error(`Unable to resolve lock script from value: ${lock}`);
     }
 
-    private parseRegistryLock(helpers: any, networkConfig: any): CkbScript {
-        const raw = this.options.config.nullifierRegistry?.lock;
-        if (!raw) {
-            return { codeHash: '0x', hashType: 'type', args: '0x' };
-        }
-
-        if (raw.startsWith('{')) {
-            return JSON.parse(raw) as CkbScript;
-        }
-
-        if (isAddressLike(raw)) {
-            return helpers.parseAddress(raw, { config: networkConfig }) as CkbScript;
-        }
-
-        if (raw.startsWith('0x')) {
-            return {
-                codeHash: networkConfig.SCRIPTS.SECP256K1_BLAKE160!.CODE_HASH,
-                hashType: networkConfig.SCRIPTS.SECP256K1_BLAKE160!.HASH_TYPE,
-                args: raw,
-            };
-        }
-
-        throw new Error('Unable to resolve NULLIFIER_REGISTRY_LOCK into a lock script.');
-    }
-
-    private resolveTypeScript(contractRef: ContractReference | string | undefined, outputIndex: number): CkbScript | undefined {
+    private resolveTypeScriptToCcc(contractRef: ContractReference | string | undefined, outputIndex: number): ccc.Script | undefined {
         if (!contractRef) {
             return undefined;
         }
@@ -341,40 +287,11 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             return undefined;
         }
 
-        return {
+        return ccc.Script.from({
             codeHash: contract.codeHash,
             hashType: contract.hashType,
             args: outputIndex === 0 ? (this.options.config.nullifierRegistry!.typeArgs || '0x') : '0x',
-        };
-    }
-
-    private resolveLockScript(lock: string, helpers: any, networkConfig: any): CkbScript {
-        const trimmed = lock.trim();
-        if (trimmed.startsWith('{')) {
-            return JSON.parse(trimmed) as CkbScript;
-        }
-
-        if (isAddressLike(trimmed)) {
-            return helpers.parseAddress(trimmed, { config: networkConfig }) as CkbScript;
-        }
-
-        if (trimmed.startsWith('0x')) {
-            return {
-                codeHash: networkConfig.SCRIPTS.SECP256K1_BLAKE160!.CODE_HASH,
-                hashType: networkConfig.SCRIPTS.SECP256K1_BLAKE160!.HASH_TYPE,
-                args: trimmed,
-            };
-        }
-
-        if (trimmed === 'always_success') {
-            return {
-                codeHash: '0x28e83a1277d48add8e72fadaa9248559e1b632bab2bd60b27955ebc4c03800a5', // Testnet always_success
-                hashType: 'type',
-                args: '0x',
-            };
-        }
-
-        throw new Error(`Unable to resolve lock script from value: ${lock}`);
+        });
     }
 
     private async loadRegistryCell(config: MixerRuntimeConfig): Promise<NullifierRegistryCell> {
@@ -389,38 +306,29 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             };
         }
 
-        const liveCell = await callJsonRpc<{
-            cell: {
-                data: {
-                    content: string;
-                };
-                output: {
-                    capacity: string;
-                    lock: unknown;
-                };
-            } | null;
-            status: string;
-        }>(config.ckbRpcUrl, 'get_live_cell', [
-            {
-                tx_hash: registryRef.txHash,
-                index: registryRef.index,
-            },
-            true,
-        ]);
+        const client = createCccClient(config);
+        const liveCell = await client.getCellLive({
+            txHash: registryRef.txHash,
+            index: registryRef.index,
+        }, true, true);
 
-        if (!liveCell.cell || liveCell.status !== 'live') {
+        if (!liveCell) {
             throw new Error(
                 `Nullifier registry cell ${registryRef.txHash}:${registryRef.index} is not live on ${config.ckbRpcUrl}`,
             );
         }
 
-        const dataHex = liveCell.cell.data.content;
+        const dataHex = liveCell.outputData;
         const nullifiers = parseRegistryNullifiers(dataHex);
         return {
             outPoint: `${registryRef.txHash}:${registryRef.index}`,
             nullifiers,
-            lock: registryRef.lock ?? JSON.stringify(liveCell.cell.output.lock),
-            capacity: registryRef.capacity ?? liveCell.cell.output.capacity,
+            lock: registryRef.lock ?? JSON.stringify({
+                codeHash: liveCell.cellOutput.lock.codeHash,
+                hashType: liveCell.cellOutput.lock.hashType,
+                args: liveCell.cellOutput.lock.args,
+            }),
+            capacity: registryRef.capacity ?? `0x${liveCell.cellOutput.capacity.toString(16)}`,
             typeArgs: registryRef.typeArgs,
         };
     }

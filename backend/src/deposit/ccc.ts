@@ -1,4 +1,4 @@
-import { RPC, Indexer, hd, helpers, config as lumosConfig } from '@ckb-lumos/lumos';
+import { ccc } from '@ckb-ccc/core';
 
 export const SHANNONS = 100_000_000n;
 
@@ -34,10 +34,6 @@ const TRANSIENT_NETWORK_PATTERNS = [
 ];
 
 let cachedEndpointPair: EndpointPair | null = null;
-
-export function initializePudge() {
-    lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
-}
 
 export function requiredEnv(key: string): string {
     const value = process.env[key];
@@ -146,11 +142,15 @@ async function callJsonRpc<T>(rpcUrl: string, method: string, params: unknown[])
 
 async function probeEndpointPair(endpoint: EndpointPair) {
     await callJsonRpc(endpoint.rpcUrl, 'get_tip_header', []);
+    
+    const client = new ccc.ClientPublicTestnet({ url: endpoint.rpcUrl });
+    const secp = await client.getKnownScript(ccc.KnownScript.Secp256k1Blake160);
+    
     await callJsonRpc(endpoint.indexerUrl, 'get_cells', [
         {
             script: {
-                code_hash: lumosConfig.getConfig().SCRIPTS.SECP256K1_BLAKE160!.CODE_HASH,
-                hash_type: lumosConfig.getConfig().SCRIPTS.SECP256K1_BLAKE160!.HASH_TYPE,
+                code_hash: secp.codeHash,
+                hash_type: secp.hashType,
                 args: '0x',
             },
             script_type: 'lock',
@@ -184,35 +184,6 @@ export async function resolveWorkingEndpointPair(forceRefresh = false) {
     throw new Error(`No working CKB endpoint pair found. Tried ${candidates.length} pair(s): ${errors.join(' | ')}`);
 }
 
-export function getRpc(endpoint?: EndpointPair) {
-    const resolved = endpoint ?? cachedEndpointPair ?? collectConfiguredEndpoints()[0];
-    return new RPC(resolved.rpcUrl);
-}
-
-export function getIndexer(endpoint?: EndpointPair) {
-    const resolved = endpoint ?? cachedEndpointPair ?? collectConfiguredEndpoints()[0];
-    return new Indexer(resolved.indexerUrl, resolved.rpcUrl);
-}
-
-export function getDeployerLock(privateKey: string) {
-    const normalized = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-    const pubKey = hd.key.privateToPublic(normalized);
-    const args = hd.key.publicKeyToBlake160(pubKey);
-    const networkConfig = lumosConfig.getConfig();
-    const template = networkConfig.SCRIPTS.SECP256K1_BLAKE160!;
-    return {
-        codeHash: template.CODE_HASH,
-        hashType: template.HASH_TYPE as 'type',
-        args,
-    };
-}
-
-export function getDeployerAddress(privateKey: string) {
-    return helpers.encodeToAddress(getDeployerLock(privateKey), {
-        config: lumosConfig.getConfig(),
-    });
-}
-
 export async function waitForTransaction(
     txHash: string,
     options: { timeoutMs?: number; pollMs?: number; settleMs?: number } = {},
@@ -224,16 +195,15 @@ export async function waitForTransaction(
 
     while (Date.now() - startedAt < timeoutMs) {
         const endpoint = await resolveWorkingEndpointPair();
-        const rpc = getRpc(endpoint);
+        const client = new ccc.ClientPublicTestnet({ url: endpoint.rpcUrl });
 
         try {
-            const tx = await rpc.getTransaction(txHash);
-            const status = (tx as any)?.txStatus?.status ?? (tx as any)?.tx_status?.status;
-            if (status === 'committed') {
+            const tx = await client.getTransaction(txHash);
+            if (tx && tx.status === 'committed') {
                 await sleep(settleMs);
                 return;
             }
-            if (status === 'rejected') {
+            if (tx && tx.status === 'rejected') {
                 throw new Error(`Transaction ${txHash} was rejected by the node`);
             }
         } catch (error) {
@@ -273,22 +243,4 @@ export async function withEndpointFailover<T>(
     }
 
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
-}
-
-export async function buildAndSendTransaction(
-    txSkeleton: ReturnType<typeof helpers.TransactionSkeleton>,
-    privateKey: string,
-) {
-    const normalized = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-    const signingEntries = txSkeleton.get('signingEntries').toArray();
-    const signatures = signingEntries.map((entry: any) =>
-        hd.key.signRecoverable(entry.message, normalized),
-    );
-    const sealedTx = helpers.sealTransaction(txSkeleton, signatures);
-
-    const txHash = await withEndpointFailover(async (endpoint) => {
-        return getRpc(endpoint).sendTransaction(sealedTx, 'passthrough');
-    });
-
-    return { txHash, sealedTx };
 }

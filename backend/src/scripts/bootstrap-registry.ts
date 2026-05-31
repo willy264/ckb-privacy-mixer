@@ -1,7 +1,6 @@
-import { initializeAggron, requiredEnv, bootstrapRegistryCell, waitForTransaction } from './lumos-common';
+import { requiredEnv, bootstrapRegistryCell, waitForTransaction } from './ccc-common.js';
 
 async function main() {
-    initializeAggron();
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
     const nullifierTypeCodeHash = requiredEnv('NULLIFIER_TYPE_CODE_HASH');
     const nullifierTypeHashType = requiredEnv('NULLIFIER_TYPE_HASH_TYPE') as 'data' | 'data1' | 'type';

@@ -18,7 +18,6 @@ import {
   prepareVaultWithdrawal,
   relayWithdrawal,
   type PreparedVaultWithdrawal,
-  ensureJoyIdCellDep,
 } from "./withdrawal";
 import { fetchDepositParticipantState, fetchFinalizedDepositNote, fetchLatestDepositPool, fetchRelayerInfo, fetchUnsignedDepositRound, submitDepositSignature, submitLiveDeposit, type DepositParticipantSnapshot, type DepositSessionSnapshot, type RelayerInfo } from "./relayer";
 import {
@@ -238,7 +237,7 @@ async function runPendingDepositFlow(
   }
 
   update("signing", "JoyID signature required. Please approve the shared deposit round transaction.");
-  const unsignedTransaction = ensureJoyIdCellDep(unsignedRound.rawTransaction as any);
+  const unsignedTransaction = unsignedRound.rawTransaction;
   const signedTransaction = await signTransactionWithJoyId(unsignedTransaction as any);
   const signaturePayload = JSON.stringify({
     witnesses: (signedTransaction as any).witnesses || [],

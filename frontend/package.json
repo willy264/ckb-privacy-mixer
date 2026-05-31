@@ -14,10 +14,12 @@
   "dependencies": {
     "@ckb-ccc/core": "^1.12.5",
     "@ckb-ccc/joy-id": "^1.0.32",
-    "@joyid/ckb": "^1.1.4",
+    "@waku/interfaces": "^0.0.34",
+    "@waku/sdk": "^0.0.36",
     "framer-motion": "^10.16.4",
     "lucide-react": "^0.279.0",
     "mixer-sdk": "workspace:*",
+    "protobufjs": "^8.5.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "mixer-pool-type",
-    "nullifier-type",
+    "nullifier-type", "registry-type",
     "zk-membership-type"
 ]

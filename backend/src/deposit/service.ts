@@ -2,7 +2,8 @@ import '../env.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
-import { generateStealthAddress } from 'mixer-sdk/dist/utils/stealth.js';
+import { generateStealthAddress } from 'mixer-sdk';
+import { deriveCommitment, randomSecret } from 'mixer-sdk';
 import { buildMintedCtNote } from './note.js';
 import {
     cancelCoordinatorDepositParticipant,
@@ -23,6 +24,8 @@ export interface LiveDepositResult {
     sessionId: string;
     inputOutPoint: string;
     participantId?: string;
+    secret?: string;
+    nullifierSecret?: string;
 }
 
 function extractKeyValue(stdout: string, key: string) {
@@ -113,11 +116,16 @@ export async function performLiveDeposit(recipientWalletAddress: string): Promis
     const blindingFactor = extractKeyValue(stdout, 'CT_NOTE_BLINDING_FACTOR');
     const createdAt = Date.now();
 
+    const secret = randomSecret();
+    const nullifierSecret = randomSecret();
+    const zkCommitment = await deriveCommitment(secret, nullifierSecret);
+
     const poolMembership = await registerCoordinatorDepositCommitment(prepared.pool.sessionId, prepared.participant.participantId, {
         depositTxHash: mintTxHash,
         inputOutPoint,
         commitment,
         blindingFactor,
+        zkCommitment,
         noteCreatedAt: createdAt,
     });
 
@@ -128,6 +136,8 @@ export async function performLiveDeposit(recipientWalletAddress: string): Promis
         sessionId: poolMembership.sessionId,
         inputOutPoint,
         participantId: prepared.participant.participantId,
+        secret,
+        nullifierSecret,
     };
 }
 
@@ -160,6 +170,8 @@ export async function fetchFinalizedDepositNote(poolId: string, participantId: s
         sessionId: poolId,
         inputOutPoint: mixedOutPoint,
         blindingFactor: participant.blindingFactor,
+        secret: '0x' + '00'.repeat(31), // Note: the backend cannot recover the user's secret/nullifier from DB. The client must supply them!
+        nullifierSecret: '0x' + '00'.repeat(31),
         stealthOutputAddress: participant.stealthOutputAddress,
         commitment,
         depositTxHash: mixedTxHash,

@@ -1,21 +1,22 @@
 import '../env.js';
-import { buildAndSendTransaction, getIndexer, initializePudge, requiredEnv, resolveWorkingEndpointPair, waitForTransaction } from './lumos.js';
+import { requiredEnv, resolveWorkingEndpointPair, waitForTransaction } from './ccc.js';
 import { buildGenesisCtInfoTransaction, MINTABLE } from './obscell.js';
+import { ccc } from '@ckb-ccc/core';
 
 async function main() {
-    initializePudge();
     const endpoint = await resolveWorkingEndpointPair();
+    const client = new ccc.ClientPublicTestnet({ url: endpoint.rpcUrl });
 
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
     const ctInfoCodeHash = requiredEnv('CT_INFO_TYPE_CODE_HASH');
     const ctInfoHashType = requiredEnv('CT_INFO_TYPE_HASH_TYPE') as 'data' | 'data1' | 'type';
     const supplyCap = BigInt(process.env.CT_INFO_SUPPLY_CAP ?? '1000000');
 
-    const { txSkeleton, typeArgs, typeScriptHash, data } = await buildGenesisCtInfoTransaction({
+    const { cccTx, typeArgs, typeScriptHash, data } = await buildGenesisCtInfoTransaction({
         privateKey,
         ctInfoCodeHash,
         ctInfoHashType,
-        indexer: getIndexer(endpoint),
+        client,
         ctInfoDep: {
             txHash: requiredEnv('CT_INFO_TYPE_TX_HASH'),
             index: requiredEnv('CT_INFO_TYPE_INDEX'),
@@ -25,7 +26,8 @@ async function main() {
         flags: MINTABLE,
     });
 
-    const { txHash } = await buildAndSendTransaction(txSkeleton, privateKey);
+    const signer = new ccc.SignerCkbPrivateKey(client, privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`);
+    const txHash = await signer.sendTransaction(cccTx);
     await waitForTransaction(txHash);
 
     console.log('ct-info bootstrap committed');

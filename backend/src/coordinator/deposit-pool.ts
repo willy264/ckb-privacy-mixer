@@ -14,6 +14,7 @@ export interface DepositPoolParticipant {
     commitment?: string;
     blindingFactor?: string;
     depositTxHash?: string;
+    zkCommitment?: string;
     finalTxHash?: string;
     inputOutPoint?: string;
     noteCreatedAt?: number;
@@ -280,8 +281,8 @@ export async function prepareDepositParticipant(
 
 function collectRegisteredCommitments(pool: DepositPool) {
     return pool.participants
-        .filter(entry => (entry.status === 'registered' || entry.status === 'finalized') && entry.commitment)
-        .map(entry => entry.commitment!);
+        .filter(entry => (entry.status === 'registered' || entry.status === 'finalized') && entry.zkCommitment)
+        .map(entry => entry.zkCommitment!);
 }
 
 async function finalizeDepositPool(pool: DepositPool) {
@@ -326,6 +327,7 @@ export async function registerDepositCommitment(
     data: {
         commitment: string;
         blindingFactor: string;
+        zkCommitment: string;
         depositTxHash: string;
         inputOutPoint: string;
         noteCreatedAt: number;
@@ -344,6 +346,7 @@ export async function registerDepositCommitment(
 
         participant.commitment = data.commitment;
         participant.blindingFactor = data.blindingFactor;
+        participant.zkCommitment = data.zkCommitment;
         participant.depositTxHash = data.depositTxHash;
         participant.inputOutPoint = data.inputOutPoint;
         participant.noteCreatedAt = data.noteCreatedAt;
