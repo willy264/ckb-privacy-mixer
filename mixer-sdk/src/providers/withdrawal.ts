@@ -1,4 +1,5 @@
 import { serializeWitnessArgs } from '@nervosnetwork/ckb-sdk-utils';
+import { ccc } from '@ckb-ccc/core';
 import type { DepositNote } from '../types/note';
 import type { MixerRuntimeConfig, ContractReference } from '../types/config';
 import type {
@@ -127,11 +128,10 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
     }
 
     async broadcastSignedWithdrawal(tx: CkbTransaction): Promise<string> {
-        const { config: lumosConfig, RPC } = await import('@ckb-lumos/lumos');
-        lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
-
-        const rpc = new RPC(this.options.config.ckbRpcUrl);
-        return rpc.sendTransaction(tx as any, 'passthrough');
+        const client = new ccc.ClientPublicTestnet({
+            url: this.options.config.ckbRpcUrl,
+        });
+        return client.sendTransaction(tx as any, 'passthrough');
     }
 
     async submitWithdrawal(tx: WithdrawalTransaction, privateKey?: string): Promise<string> {
@@ -139,34 +139,14 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             throw new Error('privateKey is required to submit a real withdrawal transaction');
         }
 
-        const { config: lumosConfig, RPC, helpers, commons, hd } = await import('@ckb-lumos/lumos');
-        lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
-        const networkConfig = lumosConfig.getConfig();
-        const secpTemplate = networkConfig.SCRIPTS.SECP256K1_BLAKE160!;
-        const pubKey = hd.key.privateToPublic(privateKey);
-        const args = hd.key.publicKeyToBlake160(pubKey);
-        const feePayerLock = {
-            codeHash: secpTemplate.CODE_HASH,
-            hashType: secpTemplate.HASH_TYPE,
-            args,
-        };
-        const feePayerAddress = helpers.encodeToAddress(feePayerLock, { config: networkConfig });
-        let { txSkeleton } = await this.buildSkeletonWithFeePayer(tx, feePayerAddress);
-
-        txSkeleton = commons.common.prepareSigningEntries(txSkeleton, { config: networkConfig });
-        
-        const signingEntries = txSkeleton.get('signingEntries').toArray();
-        const signatures = signingEntries.map(entry => {
-            // Only sign with secp key if the entry matches the fee payer's lock hash, 
-            // but for simplicity we rely on Lumos' default behavior where entries correspond to injected inputs
-            return hd.key.signRecoverable(entry.message, privateKey);
+        const client = new ccc.ClientPublicTestnet({
+            url: this.options.config.ckbRpcUrl,
         });
-
-        const sealedTx = helpers.sealTransaction(txSkeleton, signatures);
-        const rpc = new RPC(this.options.config.ckbRpcUrl);
-        const txHash = await rpc.sendTransaction(sealedTx, 'passthrough');
-        
-        return txHash;
+        const signer = new ccc.SignerCkbPrivateKey(client, privateKey);
+        const feePayerAddress = await signer.getRecommendedAddress();
+        let { txSkeleton } = await this.buildSkeletonWithFeePayer(tx, feePayerAddress);
+        const prepared = ccc.Transaction.fromLumosSkeleton(txSkeleton as any);
+        return signer.sendTransaction(prepared);
     }
 
     private async buildSkeletonWithFeePayer(tx: WithdrawalTransaction, feePayerAddress: string) {

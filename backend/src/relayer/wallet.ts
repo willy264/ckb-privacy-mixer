@@ -1,4 +1,4 @@
-import { hd, helpers, RPC, Indexer, config as lumosConfig } from '@ckb-lumos/lumos';
+import { ccc } from '@ckb-ccc/core';
 import type { RelayerConfig } from './config.js';
 import { logger } from '../utils/logger.js';
 
@@ -11,28 +11,22 @@ import { logger } from '../utils/logger.js';
  */
 export class RelayerWallet {
     private readonly privateKey: string;
-    private readonly address: string;
-    private readonly rpc: RPC;
-    private readonly indexer: Indexer;
+    private address: string;
+    private readonly client: ccc.ClientPublicTestnet;
+    private readonly signer: ccc.SignerCkbPrivateKey;
 
     constructor(cfg: RelayerConfig) {
-        // Derive the relayer's CKB address from the private key
-        lumosConfig.initializeConfig(lumosConfig.predefined.AGGRON4);
-        const pubKey     = hd.key.privateToPublic(`0x${cfg.privateKey}`);
-        const pubKeyHash = hd.key.publicKeyToBlake160(pubKey);
-        this.address = helpers.encodeToAddress(
-            {
-                codeHash: lumosConfig.predefined.AGGRON4.SCRIPTS.SECP256K1_BLAKE160!.CODE_HASH,
-                hashType: 'type',
-                args: pubKeyHash,
-            },
-            { config: lumosConfig.predefined.AGGRON4 },
-        );
         this.privateKey = `0x${cfg.privateKey}`;
-        this.rpc = new RPC(cfg.ckbRpcUrl);
-        this.indexer = new Indexer(cfg.ckbIndexerUrl, cfg.ckbRpcUrl);
+        this.client = new ccc.ClientPublicTestnet({
+            url: cfg.ckbRpcUrl,
+        });
+        this.signer = new ccc.SignerCkbPrivateKey(this.client, this.privateKey);
+        this.address = 'pending';
+        void this.signer.getRecommendedAddress().then(address => {
+            this.address = address;
+            logger.info(`[RelayerWallet] Initialized. Address: ${address}`);
+        });
 
-        logger.info(`[RelayerWallet] Initialized. Address: ${this.address}`);
     }
 
     getAddress(): string {
@@ -43,24 +37,19 @@ export class RelayerWallet {
         return this.privateKey;
     }
 
-    getRpc(): RPC {
-        return this.rpc;
+    getClient(): ccc.ClientPublicTestnet {
+        return this.client;
     }
 
-    getIndexer(): Indexer {
-        return this.indexer;
+    getSigner(): ccc.SignerCkbPrivateKey {
+        return this.signer;
     }
 
     /** Returns the relayer's CKB balance in shannons. */
     async getBalanceShannnons(): Promise<bigint> {
-        const cells = await this.indexer.getCells({
-            script: helpers.parseAddress(this.address),
-            scriptType: 'lock',
-        });
-
         let total = 0n;
-        for await (const cell of cells.objects) {
-            total += BigInt(cell.cellOutput.capacity);
+        for await (const cell of this.signer.findCells({})) {
+            total += BigInt(cell.cellOutput.capacity.toString());
         }
         return total;
     }

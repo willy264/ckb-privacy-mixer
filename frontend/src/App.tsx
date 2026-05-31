@@ -11,9 +11,8 @@ import {
   AlertCircle,
   Copy
 } from "lucide-react";
-import { connect, initConfig } from "@joyid/ckb";
-import { signRawTransaction } from "@joyid/ckb";
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
+import { connectJoyIdWallet, initializeJoyId, signTransactionWithJoyId } from "./joyid";
 import {
   broadcastPreparedWithdrawal,
   prepareVaultWithdrawal,
@@ -209,7 +208,6 @@ async function waitForPoolReady(poolId: string, denomination: number, timeoutMs 
 
 async function runPendingDepositFlow(
   tracker: PendingDepositTracker,
-  walletAddress: string,
   onProgress: (next: PendingDepositTracker) => void,
 ): Promise<DepositNote> {
   const update = (stage: DepositStage, message: string) => {
@@ -241,7 +239,7 @@ async function runPendingDepositFlow(
 
   update("signing", "JoyID signature required. Please approve the shared deposit round transaction.");
   const unsignedTransaction = ensureJoyIdCellDep(unsignedRound.rawTransaction as any);
-  const signedTransaction = await signRawTransaction(unsignedTransaction as any, walletAddress);
+  const signedTransaction = await signTransactionWithJoyId(unsignedTransaction as any);
   const signaturePayload = JSON.stringify({
     witnesses: (signedTransaction as any).witnesses || [],
     cellDeps: (signedTransaction as any).cellDeps || [],
@@ -299,15 +297,7 @@ export default function App() {
   const currentPool = pools.find(p => p.denomination === selectedPool) || pools[1];
 
   useEffect(() => {
-    const network = (import.meta as any).env?.VITE_CKB_NETWORK === "mainnet" ? "mainnet" : "testnet";
-    const joyidAppURL = network === "mainnet" ? "https://app.joyid.dev" : "https://testnet.joyid.dev";
-
-    initConfig({
-      name: "Obscell Privacy Mixer",
-      logo: "https://fav.farm/CKB",
-      joyidAppURL,
-      network,
-    });
+    initializeJoyId();
     void refreshVault()
       .then(async notes => {
         const refreshedNotes = await refreshVaultNotesFromSession(notes);
@@ -323,8 +313,8 @@ export default function App() {
 
   const handleConnect = async () => {
     try {
-      const connection = await connect();
-      setWalletAddress(connection.address);
+      const address = await connectJoyIdWallet();
+      setWalletAddress(address);
       setStatusBanner({
         tone: "success",
         text: "Wallet connected. You can now prepare and broadcast live withdrawals.",
@@ -407,7 +397,6 @@ export default function App() {
 
           const finalizedNote = await runPendingDepositFlow(
             tracker,
-            walletAddress,
             progress => {
               setPendingDeposit(progress);
               const tone: BannerTone = progress.stage === "error" ? "error" : progress.stage === "finalized" ? "success" : "info";
@@ -501,7 +490,6 @@ export default function App() {
 
       const note = await runPendingDepositFlow(
         pendingDeposit,
-        walletAddress,
         progress => {
           setPendingDeposit(progress);
           const tone: BannerTone = progress.stage === "error" ? "error" : progress.stage === "finalized" ? "success" : "info";

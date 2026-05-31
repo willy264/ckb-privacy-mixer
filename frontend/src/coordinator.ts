@@ -106,7 +106,7 @@ export class CoordinatorClient {
 
 import { deriveCommitment, randomBlindingFactor } from '../../mixer-sdk/dist/index.js';
 import type { DepositResult } from '../../mixer-sdk/dist/index.js';
-import { signRawTransaction } from '@joyid/ckb';
+import { signTransactionWithJoyId } from './joyid';
 import { ensureJoyIdCellDep } from './withdrawal';
 
 /**
@@ -158,7 +158,7 @@ export async function joinLiveMix(params: {
                     // We prompt JoyID to sign our specific input. We don't have witnessIndexes
                     // but we can just sign the whole tx. For a real CoinJoin, each participant
                     // signs their own input. JoyID's signRawTransaction signs the entire message.
-                    const signedTx = await signRawTransaction(unsignedTransaction as any, walletAddress);
+                    const signedTx = await signTransactionWithJoyId(unsignedTransaction as any);
                     
                     // Send the full array of witnesses and cell deps so the coordinator can merge them
                     const payload = {

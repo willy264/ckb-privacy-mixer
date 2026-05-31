@@ -1,4 +1,4 @@
-import { getJoyIDCellDep, signRawTransaction } from '@joyid/ckb';
+import { getJoyIDCellDep } from '@joyid/ckb';
 import {
   AggronWithdrawalProvider,
   buildMerkleTree,
@@ -11,6 +11,7 @@ import {
 } from '../../mixer-sdk/dist/index.js';
 import { getGroth16ArtifactUrls, tryLoadFrontendRuntimeConfig } from './runtime';
 import { fetchDepositSession } from './relayer';
+import { signTransactionWithJoyId } from './joyid';
 import type { DepositNote, WithdrawalMode } from './vault';
 import { submitToRelayer, pollRelayStatus, getRelayerUrl } from './relayer';
 
@@ -223,11 +224,9 @@ export async function broadcastPreparedWithdrawal(
     signerAddress,
   );
   const unsignedTransaction = ensureJoyIdCellDep(signingRequest.transaction);
-  const signedTransaction = await signRawTransaction(unsignedTransaction as any, signerAddress, {
-    witnessIndexes: signingRequest.witnessIndexes,
-  });
+  const signedTransaction = await signTransactionWithJoyId(unsignedTransaction as any);
 
-  return provider.broadcastSignedWithdrawal(signedTransaction as CkbTransaction);
+  return provider.broadcastSignedWithdrawal(signedTransaction as unknown as CkbTransaction);
 }
 
 export async function relayWithdrawal(
