@@ -208,7 +208,7 @@ export async function joinLiveMix(params: {
                         cellDeps: (signedTx as any).cellDeps || [],
                     };
                     
-                    client.signTransaction(poolId, currentParticipantId, JSON.stringify(payload));
+                    client.signTransaction(poolId, currentParticipantId, JSON.stringify(payload, (_key, value) => typeof value === 'bigint' ? value.toString() : value));
                 } catch (error) {
                     client.disconnect();
                     reject(new Error(`JoyID signing failed: ${String(error)}`));

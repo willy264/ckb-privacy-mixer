@@ -37,10 +37,18 @@ export interface DepositPool {
     finalizedCommitments?: string[];
     finalizedAt?: number;
     failureReason?: string;
+    cachedRoundHelperOutput?: {
+        outputs: Array<{
+            amount: number;
+            blinding_factor_hex: string;
+            commitment_hex: string;
+        }>;
+        range_proof_hex: string;
+    };
 }
 
 const DEPOSIT_POOL_TIMEOUT_MS = 30 * 60 * 1000;
-const DEFAULT_TARGET_PARTICIPANTS = Number.parseInt(process.env.DEPOSIT_POOL_TARGET_PARTICIPANTS ?? '4', 10);
+const DEFAULT_TARGET_PARTICIPANTS = Number.parseInt(process.env.COORDINATOR_MIN_PARTICIPANTS ?? '4', 10);
 const POOL_KEY_PREFIX = 'deposit_pool:';
 const DENOMINATION_INDEX_PREFIX = 'deposit_pool_denominator:';
 const FILE_STORE_NAME = 'coordinator-deposit-pools.json';
@@ -174,8 +182,8 @@ async function pruneExpiredDepositPools() {
             const pool = JSON.parse(raw) as DepositPool;
             const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
             const invalidOpenPool = pool.status === 'open' && activeCount > pool.targetParticipants;
-            const staleRound = (pool.status === 'ready' || pool.status === 'finalizing') && timestamp - pool.updatedAt > 10 * 60 * 1000;
-            if (pool.status === 'complete' || pool.status === 'failed' || invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+            const staleRound = (pool.status === 'ready' || pool.status === 'finalizing' || pool.status === 'complete' || pool.status === 'failed') && timestamp - pool.updatedAt > 10 * 60 * 1000;
+            if (invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
                 await deletePool(pool.poolId, pool.denomination);
                 logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
             }
@@ -188,8 +196,8 @@ async function pruneExpiredDepositPools() {
     for (const pool of Object.values(state.pools)) {
         const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
         const invalidOpenPool = pool.status === 'open' && activeCount > pool.targetParticipants;
-        const staleRound = (pool.status === 'ready' || pool.status === 'finalizing') && timestamp - pool.updatedAt > 10 * 60 * 1000;
-        if (pool.status === 'complete' || pool.status === 'failed' || invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+        const staleRound = (pool.status === 'ready' || pool.status === 'finalizing' || pool.status === 'complete' || pool.status === 'failed') && timestamp - pool.updatedAt > 10 * 60 * 1000;
+        if (invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
             delete state.pools[pool.poolId];
             changed = true;
             logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
@@ -466,6 +474,15 @@ export async function cancelDepositParticipant(poolId: string, participantId: st
 export async function getDepositPool(poolId: string) {
     await pruneExpiredDepositPools();
     return loadPool(poolId);
+}
+
+export async function setCachedRoundHelperOutput(poolId: string, cachedRoundHelperOutput: DepositPool['cachedRoundHelperOutput']) {
+    return withPoolMutation(async () => {
+        const pool = await loadPool(poolId);
+        if (!pool) return;
+        pool.cachedRoundHelperOutput = cachedRoundHelperOutput;
+        await savePool(pool);
+    });
 }
 
 export async function listDepositPools() {

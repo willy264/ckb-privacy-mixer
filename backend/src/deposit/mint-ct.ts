@@ -153,10 +153,9 @@ async function main() {
     });
 
     await cccTx.completeInputsByCapacity(signer);
-    await cccTx.completeFeeBy(signer, 1000);
 
     // Witness structure for mint
-    const witnesses: ccc.Hex[] = [];
+    const witnesses: ccc.Hex[] = [...cccTx.witnesses];
     
     // We need to build the WitnessArgs correctly
     // The ct-info witness uses outputType
@@ -167,32 +166,35 @@ async function main() {
     };
     
     // The ct-token witness uses inputType & outputType
+    // Must include a lock placeholder since this index corresponds to the capacity input added by completeInputsByCapacity
     const ctTokenWitnessObj = {
-        lock: '0x',
+        lock: '0x' + '00'.repeat(65),
         inputType: helper.mint_commitment_hex,
         outputType: helper.range_proof_hex
     };
 
     // Serialize WitnessArgs properly
-    // It's probably easier to use ccc.WitnessArgs
-    witnesses[0] = ccc.hexFrom(ccc.WitnessArgs.from({
-        lock: '0x' + '00'.repeat(65),
-        outputType: helper.mint_commitment_hex,
-    }).toBytes());
-    
-    witnesses[1] = ccc.hexFrom(ccc.WitnessArgs.from({
-        inputType: helper.mint_commitment_hex,
-        outputType: helper.range_proof_hex,
-    }).toBytes());
+    witnesses[0] = ccc.hexFrom(ccc.WitnessArgs.from(ctInfoWitnessObj).toBytes());
+    witnesses[1] = ccc.hexFrom(ccc.WitnessArgs.from(ctTokenWitnessObj).toBytes());
 
     cccTx.witnesses = witnesses;
+
+    await cccTx.completeFeeBy(signer, 1000);
 
     const txHash = await signer.sendTransaction(cccTx);
     await waitForTransaction(txHash);
 
     const outputOutPoint = `${txHash}:0x1`;
     const sessionId = `ct_mint_${txHash.slice(2, 18)}`;
-    const commitment = await deriveCommitment(helper.blinding_factor_hex, sessionId);
+    
+    // The transitional/legacy implementation used sessionId as the nullifier secret.
+    // If it's a string like 'ct_mint_...', we must hash it to a hex field element first.
+    const cryptoModule = await import('crypto');
+    const sessionHex = sessionId.startsWith('0x') 
+        ? sessionId 
+        : `0x${cryptoModule.createHash('sha256').update(sessionId).digest('hex')}`;
+    
+    const commitment = await deriveCommitment(helper.blinding_factor_hex, sessionHex);
 
     console.log('Mint committed on Pudge.');
     console.log(`MINT_TX_HASH=${txHash}`);

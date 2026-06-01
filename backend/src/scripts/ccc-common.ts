@@ -65,7 +65,7 @@ async function callRpc<T>(method: string, params: unknown[]): Promise<T> {
         }),
     });
 
-    const payload = await response.json();
+    const payload = await response.json() as any;
     if (payload.error) {
         throw new Error(JSON.stringify(payload.error));
     }

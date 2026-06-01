@@ -242,7 +242,7 @@ async function runPendingDepositFlow(
   const signaturePayload = JSON.stringify({
     witnesses: (signedTransaction as any).witnesses || [],
     cellDeps: (signedTransaction as any).cellDeps || [],
-  });
+  }, (_key, value) => typeof value === 'bigint' ? value.toString() : value);
 
   update("signature-submitted", "Submitting your round signature to the coordinator.");
   await submitDepositSignature(tracker.sessionId, tracker.participantId, signaturePayload);

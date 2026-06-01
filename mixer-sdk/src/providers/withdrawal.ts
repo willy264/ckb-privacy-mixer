@@ -226,20 +226,11 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
         const feePayerObj = await ccc.Address.fromString(feePayerAddress, client);
         const dummySigner = new ccc.SignerCkbScriptReadonly(client, feePayerObj.script);
 
+        const proofWitness = serializeProofWitness(tx.rawTransaction.witnesses[0]);
+        cccTx.witnesses = [proofWitness as ccc.Hex];
+
         await cccTx.completeInputsByCapacity(dummySigner);
         await cccTx.completeFeeBy(dummySigner, 1000);
-
-        const inputCount = cccTx.inputs.length;
-        const proofWitness = serializeProofWitness(tx.rawTransaction.witnesses[0]);
-        const emptyWitness = serializeEmptyLockWitness();
-
-        const witnesses: ccc.Hex[] = [];
-        witnesses[0] = proofWitness as ccc.Hex;
-        for (let i = 1; i < inputCount; i += 1) {
-            witnesses[i] = emptyWitness as ccc.Hex;
-        }
-        
-        cccTx.witnesses = witnesses;
 
         return { cccTx, client };
     }
