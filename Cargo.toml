@@ -1,4 +1,3 @@
-cargo-features = ["panic-immediate-abort"]
 
 [workspace]
 resolver = "2"
@@ -16,4 +15,4 @@ strip = true
 opt-level = "z"
 lto = true
 codegen-units = 1
-panic = "immediate-abort"
+panic = "abort"

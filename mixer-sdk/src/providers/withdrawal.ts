@@ -26,7 +26,7 @@ function parseOutPoint(value: string) {
 
 function serializeProofWitness(outputType: string): string {
     return serializeWitnessArgs({
-        lock: '0x',
+        lock: '0x' + '00'.repeat(65),
         inputType: '0x',
         outputType,
     });
@@ -203,12 +203,21 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
 
         for (const input of tx.rawTransaction.inputs) {
             const outPoint = parseOutPoint(input.previousOutput);
+            const cccOutPoint = {
+                txHash: outPoint.txHash,
+                index: ccc.numFrom(outPoint.index),
+            };
+            const liveCell = await client.getCellLive(cccOutPoint);
+            if (!liveCell) {
+                throw new Error(`Input cell ${input.previousOutput} is not live or cannot be found`);
+            }
             cccTx.addInput({
                 previousOutput: {
-                    txHash: outPoint.txHash,
-                    index: ccc.numToHex(outPoint.index),
+                    txHash: cccOutPoint.txHash,
+                    index: ccc.numToHex(cccOutPoint.index),
                 },
                 since: '0x0',
+                cellOutput: liveCell.cellOutput,
             });
         }
 
@@ -223,6 +232,33 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             }, ccc.hexFrom(data));
         }
 
+        // Fix output capacities: CKB requires each cell's capacity >= its occupied bytes.
+        // The withdrawal builder uses placeholder values ('1000') for some outputs.
+        // We must calculate the real minimum capacity for each output after scripts are resolved.
+        for (let i = 0; i < cccTx.outputs.length; i++) {
+            const output = cccTx.outputs[i];
+            const outputData = cccTx.outputsData[i] ?? '0x';
+            // Calculate minimum occupied capacity: 8 (capacity) + lock script + type script + data
+            let occupiedBytes = 8n; // capacity field itself
+            // Lock script: code_hash(32) + hash_type(1) + args_len
+            if (output.lock) {
+                occupiedBytes += 32n + 1n + BigInt(ccc.bytesFrom(output.lock.args).length);
+            }
+            // Type script: code_hash(32) + hash_type(1) + args_len
+            if (output.type) {
+                occupiedBytes += 32n + 1n + BigInt(ccc.bytesFrom(output.type.args).length);
+            }
+            // Data
+            if (outputData && outputData !== '0x') {
+                occupiedBytes += BigInt(ccc.bytesFrom(outputData).length);
+            }
+            const minCapacity = occupiedBytes * 100000000n; // 1 CKB = 1 byte of cell space
+            const currentCapacity = ccc.numFrom(output.capacity);
+            if (currentCapacity < minCapacity) {
+                output.capacity = minCapacity;
+            }
+        }
+
         const feePayerObj = await ccc.Address.fromString(feePayerAddress, client);
         const dummySigner = new ccc.SignerCkbScriptReadonly(client, feePayerObj.script);
 
@@ -230,7 +266,7 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
         cccTx.witnesses = [proofWitness as ccc.Hex];
 
         await cccTx.completeInputsByCapacity(dummySigner);
-        await cccTx.completeFeeBy(dummySigner, 1000);
+        await cccTx.completeFeeBy(dummySigner, 2000);
 
         return { cccTx, client };
     }

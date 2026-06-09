@@ -9,8 +9,10 @@ import {
   Settings,
   Info,
   AlertCircle,
-  Copy
+  Copy,
+  Trash2
 } from "lucide-react";
+import { deriveNullifierHash } from "mixer-sdk";
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import { connectJoyIdWallet, initializeJoyId, signTransactionWithJoyId } from "./joyid";
 import {
@@ -29,6 +31,7 @@ import {
   updateNoteInVault,
   exportNoteBackup,
   importNoteBackup,
+  deleteNoteFromVault,
   type DepositNote,
 } from "./vault";
 
@@ -69,6 +72,8 @@ interface PendingDepositTracker {
   stage: DepositStage;
   message: string;
   updatedAt: number;
+  secret?: string;
+  nullifierSecret?: string;
 }
 
 const PENDING_DEPOSIT_KEY = "obscell_pending_deposit_round";
@@ -254,7 +259,13 @@ async function runPendingDepositFlow(
     update("finalizing", "Signature accepted. Waiting for the coordinator to finalize the round.");
   }
 
-  return pollForFinalizedDepositNote(tracker.sessionId, tracker.participantId);
+  const note = await pollForFinalizedDepositNote(tracker.sessionId, tracker.participantId);
+  if (tracker.secret && tracker.nullifierSecret) {
+    note.secret = tracker.secret;
+    note.nullifierSecret = tracker.nullifierSecret;
+    note.nullifier = (await deriveNullifierHash(tracker.nullifierSecret)) as any;
+  }
+  return note;
 }
 
 export default function App() {
@@ -387,6 +398,8 @@ export default function App() {
             stage: "waiting-threshold",
             message: `Deposit minted and registered in session ${result.sessionId.slice(0, 8)}. Waiting for more participants.`,
             updatedAt: Date.now(),
+            secret: result.secret,
+            nullifierSecret: result.nullifierSecret,
           };
           setPendingDeposit(tracker);
           setStatusBanner({
@@ -479,7 +492,12 @@ export default function App() {
 
       const finalized = await fetchFinalizedDepositNote(pendingDeposit.sessionId, pendingDeposit.participantId).catch(() => null);
       if (finalized?.status === "finalized" && finalized.note) {
-        await saveNoteToVault(finalized.note as DepositNote);
+        const noteToSave = finalized.note as DepositNote;
+        if (pendingDeposit.secret && pendingDeposit.nullifierSecret) {
+          noteToSave.secret = pendingDeposit.secret;
+          noteToSave.nullifierSecret = pendingDeposit.nullifierSecret;
+        }
+        await saveNoteToVault(noteToSave);
         const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
         setVaultNotes(refreshedNotes);
         setPendingDeposit(null);
@@ -699,8 +717,11 @@ export default function App() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
+    input.onchange = async (event) => {
+      if (event.target && "value" in event.target) {
+        (event.target as HTMLInputElement).value = "";
+      }
+      const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
       try {
         const text = await file.text();
@@ -726,6 +747,31 @@ export default function App() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setStatusBanner({ tone: "success", text: "Note backup downloaded. Keep this safe!" });
+  };
+  const handleDeleteNote = async (note: DepositNote) => {
+    if (!window.confirm("Are you sure you want to delete this note from the vault? This cannot be undone.")) {
+      return;
+    }
+    try {
+      await deleteNoteFromVault(note);
+      setVaultNotes(await refreshVaultNotesFromSession(await refreshVault()));
+      setStatusBanner({ tone: "success", text: "Note deleted from vault." });
+      
+      const currentNoteText = withdrawNoteString.trim();
+      if (currentNoteText) {
+        try {
+          const parsed = JSON.parse(currentNoteText);
+          if (parsed.sessionId === note.sessionId && parsed.nullifierSecret === note.nullifierSecret) {
+            setWithdrawNoteString("");
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete note.";
+      setStatusBanner({ tone: "error", text: message });
+    }
   };
 
   const handleWithdrawAction = async () => {
@@ -989,17 +1035,30 @@ export default function App() {
                               <span className="text-xs text-gray-300 font-mono truncate max-w-[200px] block">{note.sessionId}</span>
                               <span className="text-[10px] text-gray-500">{note.denomination} CT</span>
                             </div>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleExportNote(note);
-                              }}
-                              className="shrink-0 rounded border border-white/10 p-1.5 text-gray-400 hover:border-[#00f2ff]/30 hover:text-[#00f2ff] transition-colors"
-                              title="Export note backup"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleExportNote(note);
+                                }}
+                                className="shrink-0 rounded border border-white/10 p-1.5 text-gray-400 hover:border-[#00f2ff]/30 hover:text-[#00f2ff] transition-colors"
+                                title="Export note backup"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteNote(note);
+                                }}
+                                className="shrink-0 rounded border border-white/10 p-1.5 text-gray-400 hover:border-red-500/50 hover:text-red-400 transition-colors"
+                                title="Delete note"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>

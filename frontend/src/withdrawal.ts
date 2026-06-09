@@ -212,7 +212,7 @@ export async function relayWithdrawal(
   void recipientAddress;
 
   const job = await submitToRelayer(
-    prepared.transaction.nullifier,
+    prepared.transaction.nullifier.startsWith('0x') ? prepared.transaction.nullifier : `0x${prepared.transaction.nullifier}`,
     prepared.transaction,
     relayerEndpoint,
   );

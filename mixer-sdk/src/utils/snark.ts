@@ -6,7 +6,7 @@ export class PoseidonMerkleTree {
     private levels: number;
     private nodes: string[][];
 
-    constructor(poseidon: any, levels: number = 8) {
+    constructor(poseidon: any, levels: number = 20) {
         this.poseidon = poseidon;
         this.levels = levels;
         this.nodes = Array.from({ length: levels + 1 }, () => []);

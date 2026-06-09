@@ -297,6 +297,15 @@ export async function updateNoteInVault(updatedNote: DepositNote) {
   cachedNotes = existing;
 }
 
+export async function deleteNoteFromVault(noteToDelete: DepositNote) {
+  const existing = await readVault();
+  const noteId = getNoteId(noteToDelete);
+  const updated = existing.filter(note => getNoteId(note) !== noteId);
+
+  await writeVault(updated);
+  cachedNotes = updated;
+}
+
 export async function clearVault() {
   localStorage.removeItem(VAULT_KEY);
   localStorage.removeItem(VAULT_SALT_KEY);

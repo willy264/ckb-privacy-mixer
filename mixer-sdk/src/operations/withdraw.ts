@@ -6,7 +6,7 @@ import type {
     WithdrawalContractRefs,
     WithdrawalTransaction,
 } from '../types/withdrawal';
-import { deriveNullifier } from '../utils/crypto';
+import { deriveNullifier, deriveNullifierHash } from '../utils/crypto';
 import { normalizeHex } from '../utils/encoding';
 import { serializeWithdrawalPublicInputsHex } from '../utils/proof';
 
@@ -97,18 +97,15 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
         ...DEFAULT_CONTRACTS,
         ...contracts,
     };
+    const derivedNullifier = note.nullifierSecret 
+        ? await deriveNullifierHash(note.nullifierSecret)
+        : await deriveNullifier(note.blindingFactor!, note.sessionId);
 
-    const noteBlindingFactor = note.blindingFactor!;
-    const noteSessionId = note.sessionId;
-    const derivedNullifier = await deriveNullifier(noteBlindingFactor, noteSessionId);
     if (proof.publicInputs.nullifier !== derivedNullifier) {
         throw new Error('Proof public inputs nullifier does not match the deposit note');
     }
     if (proof.publicInputs.merkleRoot !== proof.witnessBundle.proof.root) {
         throw new Error('Proof public inputs root does not match the Merkle proof root');
-    }
-    if (note.nullifier && note.nullifier !== derivedNullifier) {
-        throw new Error('Deposit note nullifier does not match the derived nullifier');
     }
 
     const normalizedNullifier = normalizeHex(derivedNullifier);
@@ -259,7 +256,11 @@ export async function withdrawMix(
 ): Promise<string> {
     validateNote(note);
 
-    const nullifier = normalizeHex(await deriveNullifier(note.blindingFactor!, note.sessionId));
+    const nullifierStr = note.nullifierSecret
+        ? await deriveNullifierHash(note.nullifierSecret)
+        : await deriveNullifier(note.blindingFactor!, note.sessionId);
+    const nullifier = normalizeHex(nullifierStr);
+    
     if (SPENT_NULLIFIERS.has(nullifier)) {
         throw new Error(`Nullifier already used: ${nullifier}`);
     }

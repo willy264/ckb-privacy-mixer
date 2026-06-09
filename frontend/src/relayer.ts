@@ -62,6 +62,8 @@ export interface DepositJobResult {
     sessionId: string;
     inputOutPoint: string;
     participantId?: string;
+    secret?: string;
+    nullifierSecret?: string;
 }
 
 export interface DepositSessionSnapshot {
@@ -154,7 +156,7 @@ export async function submitToRelayer(
         body: JSON.stringify({
             nullifierHex,
             transaction,
-        }),
+        }, (_, value) => (typeof value === 'bigint' ? value.toString() : value)),
     });
 
     const body = (await res.json().catch(() => ({ error: 'Empty response from relayer' }))) as

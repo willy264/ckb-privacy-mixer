@@ -159,8 +159,14 @@ export async function fetchFinalizedDepositNote(poolId: string, participantId: s
         throw new Error(`Participant ${participantId} is missing finalized deposit metadata.`);
     }
 
-    const leafIndex = participant.finalOutputIndex ?? 0;
-    const commitment = leafIndex >= 0 ? session.commitments[leafIndex] : session.commitments[0];
+    // participant.finalOutputIndex is the absolute index in the CKB transaction.
+    // The first `session.participantCount` outputs are change outputs.
+    // The relative index within the commitments array is finalOutputIndex - session.participantCount.
+    const relativeLeafIndex = participant.finalOutputIndex !== undefined
+        ? participant.finalOutputIndex - session.participantCount
+        : 0;
+    const leafIndex = relativeLeafIndex >= 0 ? relativeLeafIndex : 0;
+    const commitment = session.commitments[leafIndex] ?? session.commitments[0];
     const mixedTxHash = participant.finalTxHash ?? participant.depositTxHash;
     const mixedOutPoint = mixedTxHash && participant.finalOutputIndex !== undefined
         ? `${mixedTxHash}:${`0x${participant.finalOutputIndex.toString(16)}`}`

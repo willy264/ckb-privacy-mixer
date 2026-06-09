@@ -11,6 +11,10 @@ const __filename = fileURLToPath(import.meta.url);
 export const __dirname = path.dirname(__filename);
 export const PROJECT_ROOT = path.resolve(__dirname, '..');
 
+// Load root .env first (has OWNER_PRIVATE_KEY, contract vars).
+// Backend .env fills in any remaining vars (REDIS_URL, etc.).
+// dotenv default: first loaded value wins (override: false).
+dotenvConfig({ path: path.resolve(PROJECT_ROOT, '..', '..', '.env') });
 dotenvConfig({ path: path.resolve(PROJECT_ROOT, '.env') });
 
 export function requiredEnv(key: string): string {

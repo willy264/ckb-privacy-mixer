@@ -6,17 +6,17 @@ use ark_groth16::VerifyingKey;
 pub fn get_vk() -> VerifyingKey<Bn254> {
     VerifyingKey {
         alpha_g1: G1Affine::new(
-            Fq::new(BigInteger256::new([0x781bb39a0983aa2c, 0x75efaa037c4d43cc, 0xade95d37217a3044, 0x1e4f476f6ea72118])),
-            Fq::new(BigInteger256::new([0x926a5fe14efaf7d4, 0x38300fc9c5d697aa, 0x2275ff5097636371, 0x28a6d74b32cc23e0]))
+            Fq::new(BigInteger256::new([0x4e0c8cd79d1defc5, 0x6333cad27a70b5c0, 0x12954b941b4f1515, 0x240254dd78e8c85e])),
+            Fq::new(BigInteger256::new([0x53c2dd6693a58ea9, 0x570595d6d29f682a, 0xd59d0f9419932dfa, 0x01488ed25b1e2f5e]))
         ),
         beta_g2: G2Affine::new(
             Fq2::new(
-                Fq::new(BigInteger256::new([0x0e55d724e8d16d02, 0xbdca7659e04e98bf, 0xc7d97af537c74024, 0x0e08c4af56177e70])),
-                Fq::new(BigInteger256::new([0x5dc8e77d2fed412b, 0x0c2085f3354fcefa, 0xd36c9a9471da4d7e, 0x2d797ff045c67bb2])),
+                Fq::new(BigInteger256::new([0x00622267054043b4, 0x8634ff9989ebeac7, 0xeee92b1074aaa799, 0x0f28c31884540030])),
+                Fq::new(BigInteger256::new([0x00ebe699d9b97921, 0x4b69dd54f61e7dc5, 0xc7f9a0cde9458efe, 0x0fb751c42af094a9])),
             ),
             Fq2::new(
-                Fq::new(BigInteger256::new([0xe304c18a477ea96e, 0x1e20f05e32de102e, 0xa934b0565a4db3cf, 0x00cbd1aeaf8011d9])),
-                Fq::new(BigInteger256::new([0x87450f82a16cf46a, 0x1836908fb0864655, 0xda06c7676b1553aa, 0x02325dcee1a7b178])),
+                Fq::new(BigInteger256::new([0xa1cd7920a967ff25, 0xc8533b763186ab47, 0xadab60eab5eee2c0, 0x17a695380bfc1e3a])),
+                Fq::new(BigInteger256::new([0x45e6dc4405f11822, 0x5e21597ba74c088c, 0x22874bcea351e40e, 0x09821f421ab4a0cf])),
             )
         ),
         gamma_g2: G2Affine::new(
@@ -31,27 +31,31 @@ pub fn get_vk() -> VerifyingKey<Bn254> {
         ),
         delta_g2: G2Affine::new(
             Fq2::new(
-                Fq::new(BigInteger256::new([0xa30106ab0299c7d8, 0xd07679edc1803373, 0x45f2eab4d52398b1, 0x1e64ebbe0e113230])),
-                Fq::new(BigInteger256::new([0x1c5828b34917638a, 0x904864a55057c519, 0xca8a04fcb6a8303f, 0x15e90833521798de])),
+                Fq::new(BigInteger256::new([0xaad66d5417085af0, 0xcd2030fde9962454, 0x3f1a541eafe196cc, 0x1c48ffab9ab7e1d5])),
+                Fq::new(BigInteger256::new([0x417498ec4de2f473, 0x5f138cc1611157e7, 0xf8e673fe5a31423a, 0x2232467a3c369f95])),
             ),
             Fq2::new(
-                Fq::new(BigInteger256::new([0xb5de384943ca633d, 0xaf104c2e3e580d6f, 0x266340a5936da0e0, 0x079b348bd8167ae3])),
-                Fq::new(BigInteger256::new([0x4c396e9903452929, 0xf8f98f16989fa6e6, 0xe34922bd8b0422f5, 0x14dde59ff8a210dc])),
+                Fq::new(BigInteger256::new([0x8396ff4c505bf0f3, 0x450137eeb927a83a, 0x40bab6cbec536363, 0x213ec28cd1588cde])),
+                Fq::new(BigInteger256::new([0xf7b5ecc05d03dec7, 0x5c9d5c97d938ec3c, 0xaa1016f0bb5bff03, 0x2d3bed2f7c11150e])),
             )
         ),
         gamma_abc_g1: alloc::vec![
             G1Affine::new(
-                Fq::new(BigInteger256::new([0xfecc0341857d51a6, 0x9367d2eb45ffeae8, 0xdee1b923e5cdbbc4, 0x2b4f1cd8609865ea])),
-                Fq::new(BigInteger256::new([0x5b6074e01d04bac3, 0xf671dabce55d2249, 0xa6a63c6d626f5efe, 0x1359e8e29f7b8d28]))
-            ),
+            Fq::new(BigInteger256::new([0x22d82c8ac964e1bb, 0xf4e8edb5e06a62ed, 0xc5c52279559140c2, 0x0ae62c667549d2b4])),
+            Fq::new(BigInteger256::new([0x1442cddabf3ebd25, 0xd94334a7317faa96, 0x310a5d8f3d50fde5, 0x13ae751f0192e2d9]))
+        ),
             G1Affine::new(
-                Fq::new(BigInteger256::new([0x93ab124ad1339da9, 0x65d8dc15c17d788d, 0x13a88a084c5ef84b, 0x0a3f1759f5b21393])),
-                Fq::new(BigInteger256::new([0xf76fd1cb0d70123b, 0x7b605d16c2e774ac, 0xd5df69d9ac3e1a27, 0x075fa1bdb5b5285b]))
-            ),
+            Fq::new(BigInteger256::new([0x686444ae0ce68a5a, 0xf9456b0ab540281a, 0x0bbf7ed44e94ab8c, 0x2639799949c07494])),
+            Fq::new(BigInteger256::new([0xb68d9db043fc6a76, 0x15a5d779f31a0a36, 0x5aaf84336bdc06ba, 0x20cddd3476f2cee0]))
+        ),
             G1Affine::new(
-                Fq::new(BigInteger256::new([0x53634ace4cf45c53, 0x5d1df198b2db563b, 0x463dadc766f551a4, 0x0d5b1666600d1800])),
-                Fq::new(BigInteger256::new([0xc4d73bb168ab0a25, 0x51b6e47bb39f7e40, 0x1a7246159a332995, 0x19ccea50e4039b10]))
-            )
+            Fq::new(BigInteger256::new([0xd437a034ad979a4a, 0x2fe209cbfdbf68b0, 0x21c2c30dfc89867a, 0x0c68de97e6ad8c68])),
+            Fq::new(BigInteger256::new([0x81eeac264c28683c, 0x99a447d6005095b7, 0x981bc16d5fa98c5b, 0x06f4bf4aeac2ccc6]))
+        ),
+            G1Affine::new(
+            Fq::new(BigInteger256::new([0x6b59ac99502ca5e9, 0xf14b0fc7dbe327b1, 0xfa95d5b31aa17dae, 0x0f2da1f42b33a4a4])),
+            Fq::new(BigInteger256::new([0xdb5deee9c22f7c4f, 0xe35580be24071faa, 0x9ff48703e0be3301, 0x1dce33a61471c42c]))
+        )
         ],
     }
 }

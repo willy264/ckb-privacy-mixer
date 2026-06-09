@@ -42,7 +42,7 @@ export async function getEmptyValues(levels: number): Promise<HexString[]> {
 export async function buildMerkleTree(leaves: HexString[]): Promise<MerkleTreeSnapshot> {
     const leafHashes = leaves.map(hashLeaf);
     const levels: HexString[][] = [leafHashes];
-    const treeLevels = 8; // Fixed for our circuit
+    const treeLevels = 20; // Fixed for our circuit
 
     // Precompute empty hashes for each level
     const emptyValues = await getEmptyValues(treeLevels);
@@ -76,7 +76,7 @@ export async function generateMerkleProof(
         throw new Error(`Leaf index ${leafIndex} is out of bounds for tree size ${tree.leaves.length}`);
     }
 
-    const treeLevels = 8;
+    const treeLevels = 20;
     const emptyValues = await getEmptyValues(treeLevels);
     const siblings: HexString[] = [];
     const pathDirections: MerkleDirection[] = [];

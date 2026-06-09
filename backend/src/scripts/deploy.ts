@@ -49,7 +49,7 @@ function getResultFromEnv(envPrefix: string): DeployResult | undefined {
 
 async function main() {
     const privateKey = requiredEnv('OWNER_PRIVATE_KEY');
-    const releaseDir = path.resolve(PROJECT_ROOT, 'target/riscv64imac-unknown-none-elf/release');
+    const releaseDir = path.resolve(PROJECT_ROOT, '..', '..', 'target/riscv64imac-unknown-none-elf/release');
     const resultsPath = path.resolve(__dirname, 'deployment_results.json');
 
     const targets: DeployTarget[] = [

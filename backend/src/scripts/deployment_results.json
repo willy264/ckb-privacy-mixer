@@ -1,0 +1,17 @@
+{
+  "MIXER_POOL": {
+    "txHash": "0x1963a0bdd4e62bcf5e81e34a1c533036d0ae9569095f0f9a95c2314991ea35ed",
+    "index": "0x0",
+    "codeHash": "0xbbe4260a673be12640e68d7903495633f610efd99fb463e8c991f56b3e810304"
+  },
+  "NULLIFIER_TYPE": {
+    "txHash": "0x1963a0bdd4e62bcf5e81e34a1c533036d0ae9569095f0f9a95c2314991ea35ed",
+    "index": "0x1",
+    "codeHash": "0x8998aef3dbf9db0591f9afc8c8a375122014e100e11c0cf600ed658b8b74348f"
+  },
+  "ZK_MEMBERSHIP_TYPE": {
+    "txHash": "0x1963a0bdd4e62bcf5e81e34a1c533036d0ae9569095f0f9a95c2314991ea35ed",
+    "index": "0x2",
+    "codeHash": "0x3d437152c3ed48b03e261f97da6407a652a74817af3910d6167fedf0c83c5187"
+  }
+}

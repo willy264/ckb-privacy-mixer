@@ -1,7 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { ccc } from '@ckb-ccc/core';
-import { deriveCommitment } from 'mixer-sdk';
+
 import { getDepositPool, markDepositPoolFinalized, summarizeDepositPool, setCachedRoundHelperOutput, type DepositPool } from './deposit-pool.js';
 import { logger } from '../utils/logger.js';
 
@@ -366,12 +366,10 @@ export async function finalizeSignedDepositRound(poolId: string, signedTransacti
     const finalizedCommitments = await Promise.all(
         unsigned.participants.map(async (participant) => {
             const entry = pool.participants.find(candidate => candidate.participantId === participant.participantId);
-            if (!entry?.blindingFactor) {
-                throw new Error(`Participant ${participant.participantId} is missing blinding factor for finalization.`);
+            if (!entry?.zkCommitment) {
+                throw new Error(`Participant ${participant.participantId} is missing zkCommitment for finalization.`);
             }
-            const cryptoModule = await import('crypto');
-            const sessionHex = `0x${cryptoModule.createHash('sha256').update(poolId).digest('hex')}`;
-            return deriveCommitment(entry.blindingFactor, sessionHex);
+            return entry.zkCommitment;
         }),
     );
 
