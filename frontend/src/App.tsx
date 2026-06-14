@@ -12,7 +12,7 @@ import {
   Copy,
   Trash2
 } from "lucide-react";
-import { deriveNullifierHash } from "mixer-sdk";
+import { deriveCommitment, deriveNullifierHash } from "mixer-sdk";
 import { tryLoadFrontendRuntimeConfig } from "./runtime";
 import { connectJoyIdWallet, initializeJoyId, signTransactionWithJoyId } from "./joyid";
 import {
@@ -196,6 +196,46 @@ async function pollForFinalizedDepositNote(poolId: string, participantId: string
   throw new Error("Deposit is still pending finalization. Try again after more participants join the pool.");
 }
 
+function normalizeHex(value?: string) {
+  return value?.toLowerCase();
+}
+
+function isMissingPrivateSecret(value?: string) {
+  return !value || /^0x?0+$/i.test(value);
+}
+
+async function restoreFinalizedDepositSecrets(
+  note: DepositNote,
+  tracker: Pick<PendingDepositTracker, "secret" | "nullifierSecret">,
+): Promise<DepositNote> {
+  const secret = tracker.secret ?? note.secret;
+  const nullifierSecret = tracker.nullifierSecret ?? note.nullifierSecret;
+
+  if (isMissingPrivateSecret(secret) || isMissingPrivateSecret(nullifierSecret)) {
+    throw new Error(
+      "The finalized note is missing the private deposit secrets needed for withdrawal. " +
+      "Resume this round from the browser session that created the deposit before saving the vault note.",
+    );
+  }
+
+  if (note.commitment) {
+    const derivedCommitment = await deriveCommitment(secret, nullifierSecret);
+    if (normalizeHex(derivedCommitment) !== normalizeHex(note.commitment)) {
+      throw new Error(
+        "The local deposit secrets do not match the finalized commitment. " +
+        "Use the same browser session that created this participant slot.",
+      );
+    }
+  }
+
+  return {
+    ...note,
+    secret,
+    nullifierSecret,
+    nullifier: (await deriveNullifierHash(nullifierSecret)) as any,
+  };
+}
+
 async function waitForPoolReady(poolId: string, denomination: number, timeoutMs = 5 * 60 * 1000) {
   const startedAt = Date.now();
 
@@ -231,7 +271,8 @@ async function runPendingDepositFlow(
   const readyPool = await waitForPoolReady(tracker.sessionId, tracker.denomination);
   if (readyPool.status === "complete") {
     update("finalizing", "Pool already completed. Fetching your finalized note.");
-    return pollForFinalizedDepositNote(tracker.sessionId, tracker.participantId);
+    const note = await pollForFinalizedDepositNote(tracker.sessionId, tracker.participantId);
+    return restoreFinalizedDepositSecrets(note, tracker);
   }
 
   update("ready-to-sign", "Pool is ready. Preparing the unsigned shared round for your signature.");
@@ -245,6 +286,7 @@ async function runPendingDepositFlow(
   const unsignedTransaction = unsignedRound.rawTransaction;
   const signedTransaction = await signTransactionWithJoyId(unsignedTransaction as any);
   const signaturePayload = JSON.stringify({
+    txHash: unsignedRound.txHash,
     witnesses: (signedTransaction as any).witnesses || [],
     cellDeps: (signedTransaction as any).cellDeps || [],
   }, (_key, value) => typeof value === 'bigint' ? value.toString() : value);
@@ -260,12 +302,7 @@ async function runPendingDepositFlow(
   }
 
   const note = await pollForFinalizedDepositNote(tracker.sessionId, tracker.participantId);
-  if (tracker.secret && tracker.nullifierSecret) {
-    note.secret = tracker.secret;
-    note.nullifierSecret = tracker.nullifierSecret;
-    note.nullifier = (await deriveNullifierHash(tracker.nullifierSecret)) as any;
-  }
-  return note;
+  return restoreFinalizedDepositSecrets(note, tracker);
 }
 
 export default function App() {
@@ -380,7 +417,11 @@ export default function App() {
       const refreshedPool = await fetchLatestDepositPool(Number(selectedPool)).catch(() => null);
       setLatestDepositPool(refreshedPool);
       if (result.status === "finalized" && result.note) {
-        await saveNoteToVault(result.note as DepositNote);
+        const note = await restoreFinalizedDepositSecrets(result.note as DepositNote, {
+          secret: result.secret,
+          nullifierSecret: result.nullifierSecret,
+        });
+        await saveNoteToVault(note);
         const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
         setVaultNotes(refreshedNotes);
         setPendingDeposit(null);
@@ -492,11 +533,7 @@ export default function App() {
 
       const finalized = await fetchFinalizedDepositNote(pendingDeposit.sessionId, pendingDeposit.participantId).catch(() => null);
       if (finalized?.status === "finalized" && finalized.note) {
-        const noteToSave = finalized.note as DepositNote;
-        if (pendingDeposit.secret && pendingDeposit.nullifierSecret) {
-          noteToSave.secret = pendingDeposit.secret;
-          noteToSave.nullifierSecret = pendingDeposit.nullifierSecret;
-        }
+        const noteToSave = await restoreFinalizedDepositSecrets(finalized.note as DepositNote, pendingDeposit);
         await saveNoteToVault(noteToSave);
         const refreshedNotes = await refreshVaultNotesFromSession(await refreshVault());
         setVaultNotes(refreshedNotes);

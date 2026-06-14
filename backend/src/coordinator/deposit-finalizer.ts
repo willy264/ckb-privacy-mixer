@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { ccc } from '@ckb-ccc/core';
 
-import { getDepositPool, markDepositPoolFinalized, summarizeDepositPool, setCachedRoundHelperOutput, type DepositPool } from './deposit-pool.js';
+import { getDepositPool, getOrCreateCachedRoundHelperOutput, markDepositPoolFinalized, summarizeDepositPool, type DepositPool } from './deposit-pool.js';
 import { logger } from '../utils/logger.js';
 
 const CKB_SHANNON = 100_000_000n;
@@ -23,6 +23,7 @@ interface RoundHelperOutput {
 
 function parseSignaturePayload(signaturePayload: string) {
     const parsed = JSON.parse(signaturePayload) as {
+        txHash?: unknown;
         witnesses?: unknown[];
         cellDeps?: unknown[];
     };
@@ -97,11 +98,10 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
     const shuffled = [...participants].sort((left, right) => left.participantId.localeCompare(right.participantId));
     const client = new ccc.ClientPublicTestnet({ url: process.env.CKB_RPC_URL! });
     
-    let roundHelper = pool.cachedRoundHelperOutput;
-    if (!roundHelper) {
-        roundHelper = await runRoundHelper(100n, shuffled.length);
-        await setCachedRoundHelperOutput(poolId, roundHelper);
-    }
+    const roundHelper = await getOrCreateCachedRoundHelperOutput(
+        poolId,
+        () => runRoundHelper(100n, shuffled.length),
+    );
     
     const cccTx = ccc.Transaction.from({});
 
@@ -269,6 +269,7 @@ export async function buildUnsignedDepositFinalization(poolId: string) {
         rawTransaction: txObj,
         outputIndexByParticipantId,
         rangeProofHex: roundHelper.range_proof_hex,
+        txHash: cccTx.hash(),
     };
 }
 
@@ -292,6 +293,11 @@ export async function finalizeSignedDepositRound(poolId: string, signedTransacti
             throw new Error(`Missing signature payload for participant ${participantInfo.participantId}`);
         }
         const parsedPayload = parseSignaturePayload(participant.signaturePayload);
+        if (typeof parsedPayload.txHash === 'string' && parsedPayload.txHash !== unsigned.txHash) {
+            throw new Error(
+                `Participant ${participantInfo.participantId} signed stale deposit round ${parsedPayload.txHash}; current round is ${unsigned.txHash}.`,
+            );
+        }
 
         // JoyID's prepareTransaction calls findInputIndexByLock to locate the signer's own input
         // and places the real signature in witnesses[thatIndex] — NOT necessarily witnesses[i].
@@ -300,14 +306,15 @@ export async function finalizeSignedDepositRound(poolId: string, signedTransacti
         let signedWitness: string | undefined;
         let signedWitnessIndex = i;
 
+        const unsignedWitnesses = (unsigned.rawTransaction as any).witnesses as string[];
         if (Array.isArray(parsedPayload.witnesses)) {
             for (let w = 0; w < Math.min(parsedPayload.witnesses.length, inputWitnessCount); w++) {
                 const candidate = parsedPayload.witnesses[w] as string;
                 if (typeof candidate !== 'string' || !candidate.startsWith('0x')) continue;
-                // A placeholder is 1000 bytes of zeros; a real JoyID signature contains non-zero bytes.
-                const hex = candidate.slice(2);
-                const isAllZeros = hex.length > 0 && /^0+$/.test(hex);
-                if (!isAllZeros && hex.length > 200) {
+
+                // JoyID modifies the witness it signs. The unsigned witness is a placeholder.
+                // We find the signed witness by checking which one changed from the unsigned version.
+                if (candidate !== unsignedWitnesses[w]) {
                     signedWitnessIndex = w;
                     signedWitness = candidate;
                     break;

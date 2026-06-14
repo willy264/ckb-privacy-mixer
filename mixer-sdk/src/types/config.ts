@@ -6,6 +6,7 @@ export interface ContractReference {
     txHash?: string;
     index?: string;
     depType?: 'code' | 'depGroup';
+    args?: string;
 }
 
 export interface RegistryReference {

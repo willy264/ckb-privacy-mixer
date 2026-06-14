@@ -33,6 +33,7 @@ function readOptionalContract(env: EnvLike, prefix: string): ContractReference |
         txHash: env[`${prefix}_TX_HASH`],
         index: env[`${prefix}_INDEX`],
         depType: (env[`${prefix}_DEP_TYPE`] as 'code' | 'depGroup' | undefined) ?? 'code',
+        args: env[`${prefix}_ARGS`],
     };
 }
 

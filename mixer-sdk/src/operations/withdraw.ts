@@ -127,7 +127,6 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
             cellDeps: [
                 { contract: mergedContracts.nullifierType },
                 { contract: mergedContracts.zkMembershipType },
-                { contract: mergedContracts.ctTokenType },
             ],
             headerDeps: [],
             inputs: [
@@ -150,7 +149,6 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
                 {
                     capacity: '1000',
                     lock: resolveRecipientLock(note, recipientLock),
-                    type: mergedContracts.ctTokenType,
                 },
             ],
             outputsData: [
@@ -184,7 +182,6 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
             {
                 kind: 'withdrawal',
                 lock: resolveRecipientLock(note, recipientLock),
-                type: mergedContracts.ctTokenType,
                 capacity: '1000',
                 amount: denomination.toString(),
             },
@@ -197,7 +194,6 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
         cellDeps: [
             { contract: mergedContracts.nullifierType },
             { contract: mergedContracts.zkMembershipType },
-            { contract: mergedContracts.ctTokenType },
         ],
         publicInputs: proof.publicInputs,
         publicInputsHex: verifierOutputDataHex,

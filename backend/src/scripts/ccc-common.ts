@@ -242,7 +242,7 @@ export async function bootstrapRegistryCell(
     await cccTx.completeInputsByCapacity(signer);
     await cccTx.completeFeeBy(signer, DEFAULT_FEE_RATE);
 
-    console.log('Outputs:', JSON.stringify(cccTx.outputs, null, 2));
+    console.log('Outputs:', JSON.stringify(cccTx.outputs, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2));
     const txHash = await signer.sendTransaction(cccTx);
     return {
         txHash,

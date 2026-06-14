@@ -3,6 +3,7 @@ import {
   buildMerkleTree,
   buildRealWithdrawalProof,
   buildWithdrawTransaction,
+  deriveCommitment,
   type CkbTransaction,
   type LocalWithdrawalProofResult,
   type WithdrawalTransaction,
@@ -109,6 +110,34 @@ function resolveLeafIndex(note: DepositNote, commitments: string[]) {
   throw new Error('Unable to locate this note inside its local session commitment set.');
 }
 
+function normalizeHex(value?: string) {
+  return value?.toLowerCase();
+}
+
+function isMissingPrivateSecret(value?: string) {
+  return !value || /^0x?0+$/i.test(value);
+}
+
+async function validateNoteSecrets(note: DepositNote) {
+  if (isMissingPrivateSecret(note.secret) || isMissingPrivateSecret(note.nullifierSecret)) {
+    throw new Error(
+      'This vault note is missing the private deposit secrets needed to build a withdrawal proof. ' +
+      'It was likely saved after finalization without the original browser deposit state.',
+    );
+  }
+
+  if (!note.commitment) {
+    return;
+  }
+
+  const derivedCommitment = await deriveCommitment(note.secret, note.nullifierSecret);
+  if (normalizeHex(derivedCommitment) !== normalizeHex(note.commitment)) {
+    throw new Error(
+      'This vault note cannot build a withdrawal proof because its private secrets do not match its deposit commitment.',
+    );
+  }
+}
+
 export async function prepareVaultWithdrawal(
   note: DepositNote,
   options: PrepareVaultWithdrawalOptions = {},
@@ -118,6 +147,7 @@ export async function prepareVaultWithdrawal(
   }
 
   validateLiveNote(note);
+  await validateNoteSecrets(note);
 
   const commitments = await hydrateSessionCommitments(note);
   const leafIndex = resolveLeafIndex(note, commitments);

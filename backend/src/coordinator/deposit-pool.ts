@@ -485,6 +485,27 @@ export async function setCachedRoundHelperOutput(poolId: string, cachedRoundHelp
     });
 }
 
+export async function getOrCreateCachedRoundHelperOutput(
+    poolId: string,
+    createOutput: () => Promise<NonNullable<DepositPool['cachedRoundHelperOutput']>>,
+) {
+    return withPoolMutation(async () => {
+        const pool = await loadPool(poolId);
+        if (!pool) {
+            throw new Error(`Deposit pool not found: ${poolId}`);
+        }
+
+        if (pool.cachedRoundHelperOutput) {
+            return pool.cachedRoundHelperOutput;
+        }
+
+        const cachedRoundHelperOutput = await createOutput();
+        pool.cachedRoundHelperOutput = cachedRoundHelperOutput;
+        await savePool(pool);
+        return cachedRoundHelperOutput;
+    });
+}
+
 export async function listDepositPools() {
     await pruneExpiredDepositPools();
     if (await isRedisWritable()) {

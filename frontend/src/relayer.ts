@@ -271,6 +271,7 @@ export async function fetchUnsignedDepositRound(
     }>;
     rawTransaction: any;
     outputIndexByParticipantId: Record<string, number>;
+    txHash: string;
 }> {
     const res = await fetch(`${getCoordinatorUrl(endpoint)}/deposit/pools/${encodeURIComponent(poolId)}/unsigned-tx`);
     const body = await res.json().catch(() => ({ error: 'Empty response from unsigned deposit round endpoint' }));
