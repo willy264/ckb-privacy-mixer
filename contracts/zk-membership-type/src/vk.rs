@@ -41,21 +41,21 @@ pub fn get_vk() -> VerifyingKey<Bn254> {
         ),
         gamma_abc_g1: alloc::vec![
             G1Affine::new(
-            Fq::new(BigInteger256::new([0x22d82c8ac964e1bb, 0xf4e8edb5e06a62ed, 0xc5c52279559140c2, 0x0ae62c667549d2b4])),
-            Fq::new(BigInteger256::new([0x1442cddabf3ebd25, 0xd94334a7317faa96, 0x310a5d8f3d50fde5, 0x13ae751f0192e2d9]))
-        ),
+                Fq::new(BigInteger256::new([0x22d82c8ac964e1bb, 0xf4e8edb5e06a62ed, 0xc5c52279559140c2, 0x0ae62c667549d2b4])),
+                Fq::new(BigInteger256::new([0x1442cddabf3ebd25, 0xd94334a7317faa96, 0x310a5d8f3d50fde5, 0x13ae751f0192e2d9]))
+            ),
             G1Affine::new(
-            Fq::new(BigInteger256::new([0x686444ae0ce68a5a, 0xf9456b0ab540281a, 0x0bbf7ed44e94ab8c, 0x2639799949c07494])),
-            Fq::new(BigInteger256::new([0xb68d9db043fc6a76, 0x15a5d779f31a0a36, 0x5aaf84336bdc06ba, 0x20cddd3476f2cee0]))
-        ),
+                Fq::new(BigInteger256::new([0x686444ae0ce68a5a, 0xf9456b0ab540281a, 0x0bbf7ed44e94ab8c, 0x2639799949c07494])),
+                Fq::new(BigInteger256::new([0xb68d9db043fc6a76, 0x15a5d779f31a0a36, 0x5aaf84336bdc06ba, 0x20cddd3476f2cee0]))
+            ),
             G1Affine::new(
-            Fq::new(BigInteger256::new([0xd437a034ad979a4a, 0x2fe209cbfdbf68b0, 0x21c2c30dfc89867a, 0x0c68de97e6ad8c68])),
-            Fq::new(BigInteger256::new([0x81eeac264c28683c, 0x99a447d6005095b7, 0x981bc16d5fa98c5b, 0x06f4bf4aeac2ccc6]))
-        ),
+                Fq::new(BigInteger256::new([0xd437a034ad979a4a, 0x2fe209cbfdbf68b0, 0x21c2c30dfc89867a, 0x0c68de97e6ad8c68])),
+                Fq::new(BigInteger256::new([0x81eeac264c28683c, 0x99a447d6005095b7, 0x981bc16d5fa98c5b, 0x06f4bf4aeac2ccc6]))
+            ),
             G1Affine::new(
-            Fq::new(BigInteger256::new([0x6b59ac99502ca5e9, 0xf14b0fc7dbe327b1, 0xfa95d5b31aa17dae, 0x0f2da1f42b33a4a4])),
-            Fq::new(BigInteger256::new([0xdb5deee9c22f7c4f, 0xe35580be24071faa, 0x9ff48703e0be3301, 0x1dce33a61471c42c]))
-        )
+                Fq::new(BigInteger256::new([0x6b59ac99502ca5e9, 0xf14b0fc7dbe327b1, 0xfa95d5b31aa17dae, 0x0f2da1f42b33a4a4])),
+                Fq::new(BigInteger256::new([0xdb5deee9c22f7c4f, 0xe35580be24071faa, 0x9ff48703e0be3301, 0x1dce33a61471c42c]))
+            )
         ],
     }
 }
