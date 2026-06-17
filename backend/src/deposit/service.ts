@@ -3,11 +3,11 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { generateStealthAddress } from 'mixer-sdk';
-import { deriveCommitment, randomSecret } from 'mixer-sdk';
 import { buildMintedCtNote } from './note.js';
 import {
     cancelCoordinatorDepositParticipant,
     fetchCoordinatorDepositParticipant,
+    fetchCoordinatorDepositRecovery,
     fetchCoordinatorDepositSession,
     prepareCoordinatorDepositParticipant,
     registerCoordinatorDepositCommitment,
@@ -24,8 +24,6 @@ export interface LiveDepositResult {
     sessionId: string;
     inputOutPoint: string;
     participantId?: string;
-    secret?: string;
-    nullifierSecret?: string;
 }
 
 function extractKeyValue(stdout: string, key: string) {
@@ -84,7 +82,13 @@ async function runMintCommandSerially(command: string, repoRoot: string) {
     }
 }
 
-export async function performLiveDeposit(recipientWalletAddress: string): Promise<LiveDepositResult> {
+export async function performLiveDeposit(
+    recipientWalletAddress: string,
+    options: {
+        zkCommitment: string;
+        noteCreatedAt?: number;
+    },
+): Promise<LiveDepositResult> {
     const stealthArgs = generateStealthAddress(recipientWalletAddress);
     const prepared = await prepareCoordinatorDepositParticipant({
         denomination: 100,
@@ -114,18 +118,14 @@ export async function performLiveDeposit(recipientWalletAddress: string): Promis
     const inputOutPoint = extractKeyValue(stdout, 'CT_NOTE_INPUT_OUT_POINT');
     const commitment = extractKeyValue(stdout, 'CT_NOTE_TREE_COMMITMENT');
     const blindingFactor = extractKeyValue(stdout, 'CT_NOTE_BLINDING_FACTOR');
-    const createdAt = Date.now();
-
-    const secret = randomSecret();
-    const nullifierSecret = randomSecret();
-    const zkCommitment = await deriveCommitment(secret, nullifierSecret);
+    const createdAt = options.noteCreatedAt ?? Date.now();
 
     const poolMembership = await registerCoordinatorDepositCommitment(prepared.pool.sessionId, prepared.participant.participantId, {
         depositTxHash: mintTxHash,
         inputOutPoint,
         commitment,
         blindingFactor,
-        zkCommitment,
+        zkCommitment: options.zkCommitment,
         noteCreatedAt: createdAt,
     });
 
@@ -136,9 +136,31 @@ export async function performLiveDeposit(recipientWalletAddress: string): Promis
         sessionId: poolMembership.sessionId,
         inputOutPoint,
         participantId: prepared.participant.participantId,
-        secret,
-        nullifierSecret,
     };
+}
+
+export async function fetchDepositRecoveryByCommitment(zkCommitment: string) {
+    const recovery = await fetchCoordinatorDepositRecovery(zkCommitment);
+    if (!recovery.found) {
+        return {
+            status: 'not_found',
+            found: false,
+        } as const;
+    }
+
+    if (recovery.pool.status === 'complete') {
+        const finalized = await fetchFinalizedDepositNote(recovery.sessionId, recovery.participantId);
+        return {
+            ...recovery,
+            status: 'finalized',
+            note: finalized.status === 'finalized' ? finalized.note : undefined,
+        } as const;
+    }
+
+    return {
+        ...recovery,
+        status: recovery.pool.status,
+    } as const;
 }
 
 export async function fetchFinalizedDepositNote(poolId: string, participantId: string) {

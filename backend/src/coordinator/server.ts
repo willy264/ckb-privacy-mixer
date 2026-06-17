@@ -17,6 +17,7 @@ import {
     getDepositPool,
     getLatestDepositPool,
     listDepositPools,
+    findDepositParticipantByZkCommitment,
     prepareDepositParticipant,
     registerDepositCommitment,
     summarizeDepositPool,
@@ -86,6 +87,8 @@ const signDepositSchema = z.object({
     signaturePayload: z.string(),
 });
 
+const zkCommitmentParamSchema = z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'Must be a 32-byte hex commitment');
+
 export function createCoordinatorServer() {
     const app = express();
     app.use(cors());
@@ -152,6 +155,35 @@ export function createCoordinatorServer() {
             }
 
             res.json(summarizeDepositPool(pool));
+        } catch (err) {
+            next(err);
+        }
+    });
+
+    app.get('/deposit/recovery/:zkCommitment', async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const zkCommitment = zkCommitmentParamSchema.parse(req.params.zkCommitment);
+            const match = await findDepositParticipantByZkCommitment(zkCommitment);
+            if (!match) {
+                res.json({ found: false });
+                return;
+            }
+
+            res.json({
+                found: true,
+                sessionId: match.pool.poolId,
+                participantId: match.participant.participantId,
+                walletAddress: match.participant.walletAddress,
+                stealthOutputAddress: match.participant.stealthOutputAddress,
+                status: match.participant.status,
+                inputOutPoint: match.participant.inputOutPoint,
+                depositTxHash: match.participant.depositTxHash,
+                finalTxHash: match.participant.finalTxHash,
+                blindingFactor: match.participant.blindingFactor,
+                noteCreatedAt: match.participant.noteCreatedAt,
+                finalOutputIndex: match.participant.finalOutputIndex,
+                pool: summarizeDepositPool(match.pool),
+            });
         } catch (err) {
             next(err);
         }

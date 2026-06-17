@@ -48,6 +48,7 @@ export interface DepositPool {
 }
 
 const DEPOSIT_POOL_TIMEOUT_MS = 30 * 60 * 1000;
+const FINALIZED_POOL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_TARGET_PARTICIPANTS = Number.parseInt(process.env.COORDINATOR_MIN_PARTICIPANTS ?? '4', 10);
 const POOL_KEY_PREFIX = 'deposit_pool:';
 const DENOMINATION_INDEX_PREFIX = 'deposit_pool_denominator:';
@@ -182,8 +183,10 @@ async function pruneExpiredDepositPools() {
             const pool = JSON.parse(raw) as DepositPool;
             const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
             const invalidOpenPool = pool.status === 'open' && activeCount > pool.targetParticipants;
-            const staleRound = (pool.status === 'ready' || pool.status === 'finalizing' || pool.status === 'complete' || pool.status === 'failed') && timestamp - pool.updatedAt > 10 * 60 * 1000;
-            if (invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+            const staleRound = (pool.status === 'ready' || pool.status === 'finalizing' || pool.status === 'failed') && timestamp - pool.updatedAt > 10 * 60 * 1000;
+            const staleCompletePool = pool.status === 'complete' && timestamp - pool.updatedAt > FINALIZED_POOL_RETENTION_MS;
+            const staleUnfinishedPool = pool.status !== 'complete' && timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS;
+            if (invalidOpenPool || staleRound || staleCompletePool || staleUnfinishedPool) {
                 await deletePool(pool.poolId, pool.denomination);
                 logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
             }
@@ -196,8 +199,10 @@ async function pruneExpiredDepositPools() {
     for (const pool of Object.values(state.pools)) {
         const activeCount = pool.participants.filter(entry => entry.status !== 'cancelled').length;
         const invalidOpenPool = pool.status === 'open' && activeCount > pool.targetParticipants;
-        const staleRound = (pool.status === 'ready' || pool.status === 'finalizing' || pool.status === 'complete' || pool.status === 'failed') && timestamp - pool.updatedAt > 10 * 60 * 1000;
-        if (invalidOpenPool || staleRound || timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS) {
+        const staleRound = (pool.status === 'ready' || pool.status === 'finalizing' || pool.status === 'failed') && timestamp - pool.updatedAt > 10 * 60 * 1000;
+        const staleCompletePool = pool.status === 'complete' && timestamp - pool.updatedAt > FINALIZED_POOL_RETENTION_MS;
+        const staleUnfinishedPool = pool.status !== 'complete' && timestamp - pool.updatedAt > DEPOSIT_POOL_TIMEOUT_MS;
+        if (invalidOpenPool || staleRound || staleCompletePool || staleUnfinishedPool) {
             delete state.pools[pool.poolId];
             changed = true;
             logger.info('[DepositPool] Pruned', { poolId: pool.poolId, status: pool.status });
@@ -522,6 +527,19 @@ export async function listDepositPools() {
 
     const state = readFileState();
     return Object.values(state.pools).sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+export async function findDepositParticipantByZkCommitment(zkCommitment: string) {
+    await pruneExpiredDepositPools();
+    const normalized = zkCommitment.toLowerCase();
+    const pools = await listDepositPools();
+    for (const pool of pools) {
+        const participant = pool.participants.find(entry => entry.zkCommitment?.toLowerCase() === normalized);
+        if (participant) {
+            return { pool, participant };
+        }
+    }
+    return null;
 }
 
 export async function getLatestDepositPool(denomination: bigint) {

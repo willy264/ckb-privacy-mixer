@@ -62,8 +62,6 @@ export interface DepositJobResult {
     sessionId: string;
     inputOutPoint: string;
     participantId?: string;
-    secret?: string;
-    nullifierSecret?: string;
 }
 
 export interface DepositSessionSnapshot {
@@ -91,6 +89,23 @@ export interface DepositParticipantSnapshot {
     finalOutputIndex?: number;
     signaturePayload?: string;
     noteCreatedAt?: number;
+}
+
+export interface DepositRecoveryResult {
+    found: boolean;
+    status: 'not_found' | 'pending' | 'minted' | 'registered' | 'finalized' | 'open' | 'ready' | 'finalizing' | 'complete' | 'failed' | 'cancelled';
+    sessionId?: string;
+    participantId?: string;
+    walletAddress?: string;
+    stealthOutputAddress?: string;
+    inputOutPoint?: string;
+    depositTxHash?: string;
+    finalTxHash?: string;
+    blindingFactor?: string;
+    noteCreatedAt?: number;
+    finalOutputIndex?: number;
+    pool?: DepositSessionSnapshot;
+    note?: unknown;
 }
 
 /** Read the relayer URL from Vite env, defaulting to localhost for dev. */
@@ -172,12 +187,14 @@ export async function submitToRelayer(
 
 export async function submitLiveDeposit(
     walletAddress: string,
+    zkCommitment: string,
+    noteCreatedAt: number,
     endpoint = getRelayerUrl(),
 ): Promise<DepositJobResult> {
     const res = await fetch(`${endpoint}/deposit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress }),
+        body: JSON.stringify({ walletAddress, zkCommitment, noteCreatedAt }),
     });
 
     const body = (await res.json().catch(() => ({ error: 'Empty response from deposit service' }))) as
@@ -189,6 +206,22 @@ export async function submitLiveDeposit(
     }
 
     return body as DepositJobResult;
+}
+
+export async function recoverDepositByCommitment(
+    zkCommitment: string,
+    endpoint = getRelayerUrl(),
+): Promise<DepositRecoveryResult> {
+    const res = await fetch(`${endpoint}/deposit/recovery/${encodeURIComponent(zkCommitment)}`);
+    const body = (await res.json().catch(() => ({ error: 'Empty response from deposit recovery endpoint' }))) as
+        | DepositRecoveryResult
+        | { error: string };
+
+    if (!res.ok) {
+        throw new Error(('error' in body ? body.error : null) ?? `Deposit recovery failed: HTTP ${res.status}`);
+    }
+
+    return body as DepositRecoveryResult;
 }
 
 export async function fetchDepositSession(

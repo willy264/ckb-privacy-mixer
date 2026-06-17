@@ -128,6 +128,28 @@ export async function fetchLatestCoordinatorDepositPool(denomination: number) {
     return parseJson<CoordinatorDepositPoolSummary>(response);
 }
 
+export async function fetchCoordinatorDepositRecovery(zkCommitment: string) {
+    const response = await fetch(`${getCoordinatorUrl()}/deposit/recovery/${encodeURIComponent(zkCommitment)}`);
+    return parseJson<
+        | { found: false }
+        | {
+            found: true;
+            sessionId: string;
+            participantId: string;
+            walletAddress: string;
+            stealthOutputAddress: string;
+            status: 'pending' | 'minted' | 'registered' | 'finalized' | 'cancelled';
+            inputOutPoint?: string;
+            depositTxHash?: string;
+            finalTxHash?: string;
+            blindingFactor?: string;
+            noteCreatedAt?: number;
+            finalOutputIndex?: number;
+            pool: CoordinatorDepositPoolSummary;
+        }
+    >(response);
+}
+
 export async function fetchCoordinatorDepositParticipant(poolId: string, participantId: string) {
     const response = await fetch(`${getCoordinatorUrl()}/deposit/pools/${encodeURIComponent(poolId)}/participants/${encodeURIComponent(participantId)}`);
     return parseJson<{

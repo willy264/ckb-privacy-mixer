@@ -5,6 +5,7 @@ import {
   buildWithdrawTransaction,
   deriveCommitment,
   type CkbTransaction,
+  type DepositNote as SdkDepositNote,
   type LocalWithdrawalProofResult,
   type WithdrawalTransaction,
 } from '../../mixer-sdk/dist/index.js';
@@ -15,6 +16,8 @@ import type { DepositNote, WithdrawalMode } from './vault';
 import { submitToRelayer, pollRelayStatus, getRelayerUrl } from './relayer';
 
 const SUPPORTED_DENOMINATION = 100n;
+
+type FinalizedDepositNote = DepositNote & SdkDepositNote;
 
 export interface PreparedVaultWithdrawal {
   mode: WithdrawalMode;
@@ -76,7 +79,19 @@ async function hydrateSessionCommitments(note: DepositNote) {
   return localCommitments;
 }
 
-function validateLiveNote(note: DepositNote) {
+function validateLiveNote(note: DepositNote): asserts note is FinalizedDepositNote {
+  if (note.status === 'pending') {
+    throw new Error(
+      'This is a pending recovery note. Recover or finalize it before preparing a withdrawal proof.',
+    );
+  }
+
+  if (!note.inputOutPoint || !note.stealthOutputAddress) {
+    throw new Error(
+      'This note is missing finalized deposit metadata. Recover or finalize it before preparing a withdrawal proof.',
+    );
+  }
+
   if (!note.depositTxHash || note.depositTxHash.startsWith('0x_mock_')) {
     throw new Error(
       'This note came from the old preview flow and cannot be used for live withdrawals. ' +
