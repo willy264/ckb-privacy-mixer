@@ -39,8 +39,10 @@ fn sample_public_inputs() -> Bytes {
         .join("circuits")
         .join("public.json");
     let values = serde_json::from_str::<Vec<String>>(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(values.len(), 3, "fixture must contain root, nullifier, and recipient");
+
     let mut out = Vec::new();
-    for value in values.into_iter().take(2) {
+    for value in values {
         let bytes = super::zk_membership_tests::BigIntBytes::from_decimal_string(&value).to_le_bytes_32();
         out.extend_from_slice(&bytes);
     }

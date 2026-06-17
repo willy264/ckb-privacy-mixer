@@ -45,8 +45,10 @@ fn repo_root() -> PathBuf {
 fn read_public_inputs_bytes() -> Bytes {
     let path = repo_root().join("circuits").join("public.json");
     let signals = serde_json::from_str::<Vec<String>>(&fs::read_to_string(path).unwrap()).unwrap();
-    let mut bytes = Vec::with_capacity(64);
-    for signal in signals.into_iter().take(2) {
+    assert_eq!(signals.len(), 3, "fixture must contain root, nullifier, and recipient");
+
+    let mut bytes = Vec::with_capacity(96);
+    for signal in signals {
       let value = BigIntBytes::from_decimal_string(&signal);
       bytes.extend_from_slice(&value.to_le_bytes_32());
     }
