@@ -13,6 +13,14 @@ export function Header({ walletAddress, onConnect }: HeaderProps) {
           <img src="/logo.png" alt="SpectraMix Logo" className="w-9 h-9 object-contain group-hover:scale-105 transition-transform" />
           <span className="text-xl font-orbitron font-semibold tracking-wide text-white">SpectraMix</span>
         </div>
+        <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-400">
+          <a href="/blog" className="hover:text-white transition-colors">
+            Blog
+          </a>
+          <a href="/contact" className="hover:text-white transition-colors">
+            Contact
+          </a>
+        </nav>
       </div>
 
       <div className="flex items-center gap-4">

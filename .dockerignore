@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+
+dist
+**/dist
+
+target
+tests-target
+
+.git
+.env
+*.log

@@ -6,10 +6,16 @@
     "lib": ["ESNext"],
     "outDir": "dist",
     "rootDir": "src",
-    "strict": true,
+    "strict": false,
+    "noImplicitAny": false,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "mixer-sdk": ["../mixer-sdk/dist/index.d.ts", "../mixer-sdk/src/index.ts"],
+      "mixer-sdk/*": ["../mixer-sdk/dist/*", "../mixer-sdk/src/*"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+      COORDINATOR_MIN_PARTICIPANTS: ${COORDINATOR_MIN_PARTICIPANTS:-4}
+      PORT: 4001
+    depends_on:
+      - redis
+    ports:
+      - "4001:4001"
+    command:
+      [
+        "node",
+        "--input-type=module",
+        "-e",
+        "import('./backend/dist/coordinator/server.js').then(({createCoordinatorServer})=>{const port=process.env.PORT||4001;createCoordinatorServer().listen(port,'0.0.0.0',()=>console.log('Coordinator on '+port));})"
+      ]
+
+  relayer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+      COORDINATOR_URL: http://coordinator:4001
+      PORT: 4000
+    depends_on:
+      - redis
+      - coordinator
+    ports:
+      - "4000:4000"
+    command:
+      [
+        "node",
+        "--input-type=module",
+        "-e",
+        "import('./backend/dist/relayer/server.js').then(({createRelayerApp})=>{const port=process.env.PORT||4000;createRelayerApp().listen(port,'0.0.0.0',()=>console.log('Relayer on '+port));})"
+      ]
+
+volumes:
+  redis-data:
