@@ -5,7 +5,7 @@ import type {
     ScriptHashType,
     RuntimeMode,
     WithdrawalAuthorityMode,
-} from '../types/config';
+} from '../types/config.js';
 
 export interface EnvLike {
     [key: string]: string | undefined;

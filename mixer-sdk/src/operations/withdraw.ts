@@ -1,14 +1,14 @@
-import type { DepositNote } from '../types/note';
+import type { DepositNote } from '../types/note.js';
 import type {
     LiveWithdrawalBuildParams,
     LiveWithdrawalExecuteParams,
     NullifierRegistryCell,
     WithdrawalContractRefs,
     WithdrawalTransaction,
-} from '../types/withdrawal';
-import { deriveNullifier, deriveNullifierHash } from '../utils/crypto';
-import { normalizeHex } from '../utils/encoding';
-import { serializeWithdrawalPublicInputsHex } from '../utils/proof';
+} from '../types/withdrawal.js';
+import { deriveNullifier, deriveNullifierHash } from '../utils/crypto.js';
+import { normalizeHex } from '../utils/encoding.js';
+import { serializeWithdrawalPublicInputsHex } from '../utils/proof.js';
 
 const SPENT_NULLIFIERS = new Set<string>();
 const DEFAULT_DENOMINATION = 100n;

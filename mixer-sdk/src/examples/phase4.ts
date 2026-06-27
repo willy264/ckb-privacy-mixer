@@ -1,7 +1,7 @@
-import type { DepositNote } from '../types/note';
-import { deriveCommitment, randomBlindingFactor } from '../utils/crypto';
-import { buildMerkleTree } from '../utils/merkle';
-import { buildRealWithdrawalProof } from '../utils/proof';
+import type { DepositNote } from '../types/note.js';
+import { deriveCommitment, randomBlindingFactor } from '../utils/crypto.js';
+import { buildMerkleTree } from '../utils/merkle.js';
+import { buildRealWithdrawalProof } from '../utils/proof.js';
 
 const DENOMINATION = 100n;
 

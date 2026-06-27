@@ -1,12 +1,12 @@
-import type { LocalWithdrawalProofResult } from '../utils/proof';
-import type { DepositNote } from './note';
+import type { LocalWithdrawalProofResult } from '../utils/proof.js';
+import type { DepositNote } from './note.js';
 import type {
     ContractReference,
     MixerRuntimeConfig,
     RuntimeMode,
     WithdrawalAuthorityMode,
-} from './config';
-import type { WithdrawalPublicInputs } from './proof';
+} from './config.js';
+import type { WithdrawalPublicInputs } from './proof.js';
 
 export interface WithdrawalResolution {
     config: Partial<MixerRuntimeConfig>;

@@ -1,5 +1,5 @@
-import type { HexString, MerkleProof, ProofEncoding } from './proof';
-import type { RuntimeMode, WithdrawalAuthorityMode } from './config';
+import type { HexString, MerkleProof, ProofEncoding } from './proof.js';
+import type { RuntimeMode, WithdrawalAuthorityMode } from './config.js';
 
 /**
  * A deposit note represents the private data a user holds

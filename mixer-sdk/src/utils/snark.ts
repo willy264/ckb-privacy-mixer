@@ -1,5 +1,5 @@
 import { buildPoseidon } from 'circomlibjs';
-import type { DepositNote } from '../types/note';
+import type { DepositNote } from '../types/note.js';
 
 export class PoseidonMerkleTree {
     private poseidon: any;

@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { buildPoseidon } from 'circomlibjs';
-import { normalizeHex } from './encoding';
+import { normalizeHex } from './encoding.js';
 
 let poseidon: any;
 

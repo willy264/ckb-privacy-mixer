@@ -1,7 +1,7 @@
 import { serializeWitnessArgs } from '@nervosnetwork/ckb-sdk-utils';
 import { ccc } from '@ckb-ccc/core';
-import type { DepositNote } from '../types/note';
-import type { MixerRuntimeConfig, ContractReference } from '../types/config';
+import type { DepositNote } from '../types/note.js';
+import type { MixerRuntimeConfig, ContractReference } from '../types/config.js';
 import type {
     CkbCellDep,
     CkbScript,
@@ -11,9 +11,9 @@ import type {
     WithdrawalTransaction,
     WithdrawalResolution,
     LiveWithdrawalProvider,
-} from '../types/withdrawal';
-import { reconstructWithdrawalProof } from '../utils/proof';
-import { normalizeHex } from '../utils/encoding';
+} from '../types/withdrawal.js';
+import { reconstructWithdrawalProof } from '../utils/proof.js';
+import { normalizeHex } from '../utils/encoding.js';
 
 function parseOutPoint(value: string) {
     const [txHash, index] = value.split(':');

@@ -1,5 +1,5 @@
 import * as snarkjs from 'snarkjs';
-import type { PackedGroth16Proof, ProofEncoding } from '../types/proof';
+import type { PackedGroth16Proof, ProofEncoding } from '../types/proof.js';
 
 export interface SnarkProofBundle {
     proof: any;

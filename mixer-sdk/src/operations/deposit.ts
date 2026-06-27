@@ -1,4 +1,4 @@
-import type { Cell, DepositResult } from '../core/session';
+import type { Cell, DepositResult } from '../core/session.js';
 
 export interface JoinMixParams {
     ctInputCell: Cell;

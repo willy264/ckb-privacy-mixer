@@ -4,8 +4,8 @@ import type {
     MerkleDirection,
     MerkleProof,
     MerkleTreeSnapshot,
-} from '../types/proof';
-import { normalizeHex } from './encoding';
+} from '../types/proof.js';
+import { normalizeHex } from './encoding.js';
 
 let poseidon: any;
 

@@ -1,15 +1,15 @@
 import * as crypto from 'crypto';
-import type { DepositNote } from '../types/note';
+import type { DepositNote } from '../types/note.js';
 import type {
     MerkleTreeSnapshot,
     PackedGroth16Proof,
     WithdrawalPublicInputs,
     WithdrawalWitnessBundle,
-} from '../types/proof';
-import { deriveNullifierHash } from './crypto';
-import { bytesToHex, concatBytes, hexToBytes, u32LeBytes } from './encoding';
-import { generateMerkleProof, verifyMerkleProof } from './merkle';
-import { generateProof, packGroth16Proof, GROTH16_PROOF_ENCODING } from './prover';
+} from '../types/proof.js';
+import { deriveNullifierHash } from './crypto.js';
+import { bytesToHex, concatBytes, hexToBytes, u32LeBytes } from './encoding.js';
+import { generateMerkleProof, verifyMerkleProof } from './merkle.js';
+import { generateProof, packGroth16Proof, GROTH16_PROOF_ENCODING } from './prover.js';
 
 export interface LocalWithdrawalProofResult {
     publicInputs: WithdrawalPublicInputs;
