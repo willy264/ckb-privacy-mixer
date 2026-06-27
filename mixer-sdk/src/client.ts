@@ -1,5 +1,4 @@
 import { joinMix } from './operations/deposit.js';
-import { something } from './operations/deposit.js'
 import { withdrawMix } from './operations/withdraw.js';
 import type { JoinMixParams } from './operations/deposit.js';
 import type { DepositResult } from './core/session.js';
