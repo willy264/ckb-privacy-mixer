@@ -17,6 +17,9 @@ import { initWaku, subscribeToWakuMessages, publishWakuMessage } from 'mixer-sdk
 
 import { rateLimit } from 'express-rate-limit';
 
+const app = express();
+app.set('trust proxy', 1);  
+
 /**
  * Creates and returns the Relayer Express application.
  *

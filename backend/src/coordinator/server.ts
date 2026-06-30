@@ -44,6 +44,9 @@ interface WsSignMessage {
 
 type WsInboundMessage = WsJoinMessage | WsSignMessage;
 
+const app = express();
+app.set('trust proxy', 1);
+
 const poolSockets = new Map<string, Set<WebSocket>>();
 
 function broadcastToPool(poolId: string, message: object) {
