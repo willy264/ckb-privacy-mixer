@@ -44,9 +44,6 @@ interface WsSignMessage {
 
 type WsInboundMessage = WsJoinMessage | WsSignMessage;
 
-const app = express();
-app.set('trust proxy', 1);
-
 const poolSockets = new Map<string, Set<WebSocket>>();
 
 function broadcastToPool(poolId: string, message: object) {
@@ -94,6 +91,7 @@ const zkCommitmentParamSchema = z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'Must be
 
 export function createCoordinatorServer() {
     const app = express();
+    app.set('trust proxy', 1);
     app.use(cors());
     app.use(express.json());
 
