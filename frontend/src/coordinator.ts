@@ -1,4 +1,4 @@
-import { getRelayerUrl, getWaku } from './relayer';
+import { getCoordinatorUrl, getRelayerUrl, getWaku } from './relayer';
 import { publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk';
 
 
@@ -28,7 +28,7 @@ export class CoordinatorClient {
     constructor(endpoint?: string) {
         this.wakuMode = (import.meta as any).env?.VITE_USE_WAKU === 'true';
         const base = endpoint ?? getRelayerUrl();
-        this.endpoint = base.replace('http', 'ws').replace('4000', '4001');
+        this.endpoint = getCoordinatorUrl(base).replace(/^http/, 'ws');
     }
 
     async connect(handlers: CoordinatorEventHandler): Promise<void> {

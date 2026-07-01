@@ -108,13 +108,32 @@ export interface DepositRecoveryResult {
     note?: unknown;
 }
 
-/** Read the relayer URL from Vite env, defaulting to localhost for dev. */
-export function getRelayerUrl(): string {
-    return (import.meta as any).env?.VITE_RELAYER_URL ?? 'http://localhost:4000';
+function cleanEndpoint(value: string): string {
+    return value.trim().replace(/\/+$/, '');
 }
 
-function getCoordinatorUrl(endpoint = getRelayerUrl()): string {
-    return endpoint.replace(':4000', ':4001').replace('http://', 'http://').replace('https://', 'https://');
+function readEndpointEnv(name: string): string | undefined {
+    const value = (import.meta as any).env?.[name];
+    return typeof value === 'string' && value.trim() ? cleanEndpoint(value) : undefined;
+}
+
+/** Read the relayer URL from Vite env, defaulting to localhost only for dev. */
+export function getRelayerUrl(): string {
+    const endpoint = readEndpointEnv('VITE_RELAYER_URL');
+    if (endpoint) return endpoint;
+
+    if ((import.meta as any).env?.PROD) {
+        throw new Error('Missing VITE_RELAYER_URL. Set it to the public Railway relayer URL and redeploy the frontend.');
+    }
+
+    return 'http://localhost:4000';
+}
+
+export function getCoordinatorUrl(endpoint = getRelayerUrl()): string {
+    const explicit = readEndpointEnv('VITE_COORDINATOR_URL');
+    if (explicit) return explicit;
+
+    return endpoint.replace(':4000', ':4001');
 }
 
 /**
