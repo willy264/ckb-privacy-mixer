@@ -19,4 +19,4 @@ RUN pnpm --filter ckb-mixer-backend build
 
 EXPOSE 4000 4001
 
-CMD ["node", "--input-type=module", "-e", "import('./backend/dist/coordinator/server.js').then(({createCoordinatorServer})=>{const port=process.env.PORT||4001;createCoordinatorServer().listen(port,'0.0.0.0',()=>console.log('Coordinator on '+port));})"]
+CMD ["node", "backend/dist/coordinator/start.js"]
