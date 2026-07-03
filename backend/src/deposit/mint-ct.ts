@@ -1,6 +1,8 @@
 import '../env.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
 import { deriveCommitment } from 'mixer-sdk';
 import { ccc } from '@ckb-ccc/core';
 import { requiredEnv, resolveWorkingEndpointPair, waitForTransaction } from './ccc.js';
@@ -18,7 +20,30 @@ interface MintHelperOutput {
     range_proof_hex: string;
 }
 
+function findMintHelperBinary() {
+    const binaryName = process.platform === 'win32' ? 'ct-mint-helper.exe' : 'ct-mint-helper';
+    const candidates = [
+        process.env.CT_MINT_HELPER_BIN,
+        path.resolve(process.cwd(), 'bin', binaryName),
+        path.resolve(process.cwd(), '..', 'bin', binaryName),
+        path.resolve(process.cwd(), 'tools', 'ct-mint-helper', 'target', 'release', binaryName),
+        path.resolve(process.cwd(), '..', 'tools', 'ct-mint-helper', 'target', 'release', binaryName),
+    ].filter((candidate): candidate is string => !!candidate);
+
+    return candidates.find(candidate => fs.existsSync(candidate));
+}
+
 async function runMintHelper(amount: bigint): Promise<MintHelperOutput> {
+    const helperBinary = findMintHelperBinary();
+    if (helperBinary) {
+        const { stdout } = await execFileAsync(
+            helperBinary,
+            [amount.toString(), '--zero-blinding'],
+            { cwd: process.cwd() },
+        );
+        return JSON.parse(stdout) as MintHelperOutput;
+    }
+
     const { stdout } = await execFileAsync(
         'cargo',
         ['run', '-q', '-p', 'ct-mint-helper', '--', amount.toString(), '--zero-blinding'],
