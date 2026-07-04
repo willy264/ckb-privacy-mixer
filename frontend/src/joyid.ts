@@ -25,8 +25,8 @@ function createClient() {
 
 function getJoyIdAppUrl() {
   return getCkbNetwork() === 'mainnet'
-    ? 'https://app.joyid.dev'
-        // ? 'https://app.joy.id'
+    // ? 'https://app.joyid.dev'
+    ? 'https://app.joy.id'
     : 'https://testnet.joyid.dev';
 }
 
