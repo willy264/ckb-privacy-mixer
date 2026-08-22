@@ -1,5 +1,5 @@
 # Title
-Obscell Privacy Mixer: a zero-knowledge coin mixer for Nervos CKB
+Obscell Privacy Mixer: a zero-knowledge coin mixer for Nervos CKB. 
 
 # Body
 
