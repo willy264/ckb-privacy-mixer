@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Info, Shield } from "lucide-react";
+import { Info, RefreshCw, Shield } from "lucide-react";
 import type { Denomination, PoolState } from "../utils/app-helpers";
 
 interface StatsSidebarProps {
@@ -19,8 +19,11 @@ export function StatsSidebar({ selectedPool, currentPool, onRefreshPool }: Stats
             <button
               onClick={onRefreshPool}
               className="w-7 h-7 flex items-center justify-center rounded-none bg-[#0C0018] border border-white/5 text-[10px] font-bold text-slate-400 hover:text-white hover:bg-white/[0.05] transition-colors uppercase tracking-widest shadow-sm"
+              type="button"
+              aria-label="Refresh prototype round state"
+              title="Refresh prototype round state"
             >
-              ↻
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -28,7 +31,7 @@ export function StatsSidebar({ selectedPool, currentPool, onRefreshPool }: Stats
         <div className="p-6 space-y-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em]">Anonymity set</span>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em]">Round participants (prototype)</span>
               <Info className="w-3.5 h-3.5 text-slate-600 cursor-help" />
             </div>
             <div className="h-2 w-full bg-[#05000A]/60 shadow-[inset_0_2px_10px_rgba(0,0,0,0.8)] rounded-none overflow-hidden border border-white/5">
@@ -46,9 +49,9 @@ export function StatsSidebar({ selectedPool, currentPool, onRefreshPool }: Stats
           </div>
 
           <div>
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-5 block">Latest deposits</span>
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-5 block">Participant slots</span>
             <div className="space-y-3">
-              {[...Array(5)].map((_, i) => (
+              {Array.from({ length: 5 }, (_, i) => (
                 <div key={i} className="flex items-center gap-4">
                   <div className={`flex-[2] h-[34px] rounded-none transition-all duration-500 ${
                     i < currentPool.participants
@@ -57,7 +60,7 @@ export function StatsSidebar({ selectedPool, currentPool, onRefreshPool }: Stats
                   }`}>
                     {i < currentPool.participants && (
                       <div className="h-full flex items-center px-4">
-                        <span className="text-[11px] font-mono text-brand-primary/80">0x{(Math.random() * 0xffffffffffff).toString(16).slice(0, 12)}...</span>
+                        <span className="text-[11px] font-mono text-brand-primary/80">Participant slot {i + 1}</span>
                       </div>
                     )}
                   </div>
@@ -68,7 +71,7 @@ export function StatsSidebar({ selectedPool, currentPool, onRefreshPool }: Stats
                   }`}>
                     {i < currentPool.participants && (
                       <div className="h-full flex items-center justify-center">
-                        <span className="text-[10px] font-medium tracking-wide text-slate-400">{Math.floor(Math.random() * 60)}m ago</span>
+                        <span className="text-[10px] font-medium tracking-wide text-slate-400">Local UI state</span>
                       </div>
                     )}
                   </div>
@@ -84,7 +87,7 @@ export function StatsSidebar({ selectedPool, currentPool, onRefreshPool }: Stats
           <Shield className="w-4 h-4 text-brand-primary shrink-0 mt-0.5" />
           <div className="text-[11px] text-slate-400 leading-relaxed font-medium tracking-wide">
             <strong className="text-brand-primary block mb-2 uppercase tracking-[0.2em] text-[9px]">Privacy Note</strong>
-            SpectraMix uses non-interactive zero-knowledge proofs (Groth16) to decouple your identity from your assets. Your funds are protected by the mathematics of the BN254 curve.
+            This legacy screen demonstrates prototype Groth16 and coordinator mechanics. It does not establish protocol-correct privacy or blockchain evidence.
           </div>
         </div>
       </div>

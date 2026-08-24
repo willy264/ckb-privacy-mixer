@@ -103,7 +103,7 @@ export function WithdrawTab({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-white uppercase tracking-wider">Proof Validated</h4>
-                    <p className="text-[9px] text-brand-primary/70 font-bold uppercase tracking-[0.2em]">Ready for Private Broadcast</p>
+                    <p className="text-[9px] text-brand-primary/70 font-bold uppercase tracking-[0.2em]">Ready for Prototype Broadcast</p>
                   </div>
                 </div>
                 
@@ -121,11 +121,11 @@ export function WithdrawTab({
 
               <div className="p-4 bg-[#0D1117] rounded-none border border-brand-border">
                 <div className="flex items-center justify-between mb-2">
-                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Privacy Rating</span>
-                   <span className="text-[9px] font-bold text-brand-primary uppercase tracking-widest">Maximum (Relay)</span>
+                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Privacy Disclosure</span>
+                   <span className="text-[9px] font-bold text-amber-300 uppercase tracking-widest">Not Quantified</span>
                 </div>
                 <div className="h-2 w-full bg-[#1a1a2e] rounded-none overflow-hidden">
-                   <div className="h-full w-full bg-brand-primary shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
+                   <div className="h-full w-1/3 bg-amber-400/70" />
                 </div>
               </div>
 

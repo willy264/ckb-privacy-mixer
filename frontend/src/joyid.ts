@@ -39,7 +39,7 @@ export function initializeJoyId() {
 function createSigner() {
   return new JoyId.CkbSigner(
     createClient(),
-    'Obscell Privacy Mixer',
+    'Obscell Privacy',
     'https://fav.farm/CKB',
     getJoyIdAppUrl(),
   );
@@ -67,6 +67,7 @@ export async function signTransactionWithJoyId(txLike: unknown) {
 }
 
 export function disconnectJoyIdWallet() {
-  void cachedSigner?.disconnect();
+  const signer = cachedSigner;
   cachedSigner = null;
+  void signer?.disconnect().catch(() => undefined);
 }

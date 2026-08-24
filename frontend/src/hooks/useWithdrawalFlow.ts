@@ -216,7 +216,7 @@ export function useWithdrawalFlow({
       setDecryptedNote(updatedNote);
       setStatusBanner({
         tone: "success",
-        text: `Relayed successfully - tx hash: ${txHash}. Your withdrawal is anonymous.`,
+        text: `Prototype relayer submitted tx hash: ${txHash}. Verify its status independently on CKB.`,
       });
     } catch (error) {
       setStatusBanner({

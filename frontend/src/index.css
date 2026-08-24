@@ -2,6 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+.legacy-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #05000a;
+  color: #cbd5e1;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.legacy-prototype-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #92400e;
+  padding: 9px 20px;
+  background: #2b1708;
+  color: #fde7bb;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.legacy-prototype-banner a {
+  flex: 0 0 auto;
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .legacy-prototype-banner {
+    position: relative;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px;
+  }
+}
+
 @layer base {
   body {
     @apply bg-brand-bg text-slate-100 font-inter antialiased;
