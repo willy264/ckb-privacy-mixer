@@ -31,7 +31,7 @@ importers:
         version: 0.0.34
       '@waku/sdk':
         specifier: ^0.0.36
-        version: 0.0.36(@multiformats/multiaddr@12.5.1)
+        version: 0.0.36(@multiformats/multiaddr@12.5.1)(supports-color@10.2.2)
       cors:
         specifier: ^2.8.5
         version: 2.8.6
@@ -40,13 +40,13 @@ importers:
         version: 16.3.1
       express:
         specifier: ^4.18.2
-        version: 4.22.2
+        version: 4.22.2(supports-color@10.2.2)
       express-rate-limit:
         specifier: ^8.5.2
-        version: 8.5.2(express@4.22.2)
+        version: 8.5.2(express@4.22.2(supports-color@10.2.2))
       ioredis:
         specifier: ^5.10.1
-        version: 5.10.1
+        version: 5.10.1(supports-color@10.2.2)
       mixer-sdk:
         specifier: workspace:*
         version: link:../mixer-sdk
@@ -77,7 +77,7 @@ importers:
         version: 4.17.25
       '@types/express-rate-limit':
         specifier: ^6.0.2
-        version: 6.0.2(express@4.22.2)
+        version: 6.0.2(express@4.22.2(supports-color@10.2.2))
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.39
@@ -110,7 +110,7 @@ importers:
         version: 0.0.34
       '@waku/sdk':
         specifier: ^0.0.36
-        version: 0.0.36(@multiformats/multiaddr@12.5.1)
+        version: 0.0.36(@multiformats/multiaddr@12.5.1)(supports-color@10.2.2)
       framer-motion:
         specifier: ^10.16.4
         version: 10.18.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -138,13 +138,13 @@ importers:
         version: 18.3.7(@types/react@18.3.28)
       '@vitejs/plugin-react':
         specifier: ^4.0.3
-        version: 4.7.0(vite@4.5.14(@types/node@22.7.5))
+        version: 4.7.0(supports-color@10.2.2)(vite@4.5.14(@types/node@22.7.5))
       autoprefixer:
         specifier: ^10.4.15
         version: 10.5.0(postcss@8.5.10)
       playwright:
-        specifier: 1.55.0
-        version: 1.55.0
+        specifier: 1.55.1
+        version: 1.55.1
       postcss:
         specifier: ^8.4.29
         version: 8.5.10
@@ -180,7 +180,7 @@ importers:
         version: 0.0.34
       '@waku/sdk':
         specifier: ^0.0.36
-        version: 0.0.36(@multiformats/multiaddr@12.5.1)
+        version: 0.0.36(@multiformats/multiaddr@12.5.1)(supports-color@10.2.2)
       circomlibjs:
         specifier: ^0.1.7
         version: 0.1.7
@@ -2371,13 +2371,13 @@ packages:
     resolution: {integrity: sha512-NPE8TDbzl/3YQYY7CSS228s3g2ollTFnc+Qi3tqmqJp9Vg2ovUpixcJEo2HJScN2Ez+kEaal6y70c0ehqJBJeA==}
     engines: {node: '>=10'}
 
-  playwright-core@1.55.0:
-    resolution: {integrity: sha512-GvZs4vU3U5ro2nZpeiwyb0zuFaqb9sUiAJuyrWpcGouD8y9/HLgGbNRjIph7zU9D3hnPaisMl9zG9CgFi/biIg==}
+  playwright-core@1.55.1:
+    resolution: {integrity: sha512-Z6Mh9mkwX+zxSlHqdr5AOcJnfp+xUWLCt9uKV18fhzA8eyxUd8NUWzAjxUh55RZKSYwDGX0cfaySdhZJGMoJ+w==}
     engines: {node: '>=18'}
     hasBin: true
 
-  playwright@1.55.0:
-    resolution: {integrity: sha512-sdCWStblvV1YU909Xqx0DhOjPZE4/5lJsIS84IfN9dAZfcl/CIZ5O8l3o0j7hPMjDvqoTF8ZUcc+i/GL5erstA==}
+  playwright@1.55.1:
+    resolution: {integrity: sha512-cJW4Xd/G3v5ovXtJJ52MAOclqeac9S/aGGgRzLabuF8TnIb6xHvMzKIa6JmrRzUkeXJgfL1MhukP0NK6l39h3A==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -2970,20 +2970,20 @@ snapshots:
 
   '@babel/compat-data@7.29.0': {}
 
-  '@babel/core@7.29.0':
+  '@babel/core@7.29.0(supports-color@10.2.2)':
     dependencies:
       '@babel/code-frame': 7.29.0
       '@babel/generator': 7.29.1
       '@babel/helper-compilation-targets': 7.28.6
-      '@babel/helper-module-transforms': 7.28.6(@babel/core@7.29.0)
+      '@babel/helper-module-transforms': 7.28.6(@babel/core@7.29.0(supports-color@10.2.2))(supports-color@10.2.2)
       '@babel/helpers': 7.29.2
       '@babel/parser': 7.29.2
       '@babel/template': 7.28.6
-      '@babel/traverse': 7.29.0
+      '@babel/traverse': 7.29.0(supports-color@10.2.2)
       '@babel/types': 7.29.0
       '@jridgewell/remapping': 2.3.5
       convert-source-map: 2.0.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@10.2.2)
       gensync: 1.0.0-beta.2
       json5: 2.2.3
       semver: 6.3.1
@@ -3008,19 +3008,19 @@ snapshots:
 
   '@babel/helper-globals@7.28.0': {}
 
-  '@babel/helper-module-imports@7.28.6':
+  '@babel/helper-module-imports@7.28.6(supports-color@10.2.2)':
     dependencies:
-      '@babel/traverse': 7.29.0
+      '@babel/traverse': 7.29.0(supports-color@10.2.2)
       '@babel/types': 7.29.0
     transitivePeerDependencies:
       - supports-color
 
-  '@babel/helper-module-transforms@7.28.6(@babel/core@7.29.0)':
+  '@babel/helper-module-transforms@7.28.6(@babel/core@7.29.0(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      '@babel/core': 7.29.0
-      '@babel/helper-module-imports': 7.28.6
+      '@babel/core': 7.29.0(supports-color@10.2.2)
+      '@babel/helper-module-imports': 7.28.6(supports-color@10.2.2)
       '@babel/helper-validator-identifier': 7.28.5
-      '@babel/traverse': 7.29.0
+      '@babel/traverse': 7.29.0(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -3041,14 +3041,14 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.0
 
-  '@babel/plugin-transform-react-jsx-self@7.27.1(@babel/core@7.29.0)':
+  '@babel/plugin-transform-react-jsx-self@7.27.1(@babel/core@7.29.0(supports-color@10.2.2))':
     dependencies:
-      '@babel/core': 7.29.0
+      '@babel/core': 7.29.0(supports-color@10.2.2)
       '@babel/helper-plugin-utils': 7.28.6
 
-  '@babel/plugin-transform-react-jsx-source@7.27.1(@babel/core@7.29.0)':
+  '@babel/plugin-transform-react-jsx-source@7.27.1(@babel/core@7.29.0(supports-color@10.2.2))':
     dependencies:
-      '@babel/core': 7.29.0
+      '@babel/core': 7.29.0(supports-color@10.2.2)
       '@babel/helper-plugin-utils': 7.28.6
 
   '@babel/template@7.28.6':
@@ -3057,7 +3057,7 @@ snapshots:
       '@babel/parser': 7.29.2
       '@babel/types': 7.29.0
 
-  '@babel/traverse@7.29.0':
+  '@babel/traverse@7.29.0(supports-color@10.2.2)':
     dependencies:
       '@babel/code-frame': 7.29.0
       '@babel/generator': 7.29.1
@@ -3065,7 +3065,7 @@ snapshots:
       '@babel/parser': 7.29.2
       '@babel/template': 7.28.6
       '@babel/types': 7.29.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -4047,9 +4047,9 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
-  '@types/express-rate-limit@6.0.2(express@4.22.2)':
+  '@types/express-rate-limit@6.0.2(express@4.22.2(supports-color@10.2.2))':
     dependencies:
-      express-rate-limit: 8.5.2(express@4.22.2)
+      express-rate-limit: 8.5.2(express@4.22.2(supports-color@10.2.2))
     transitivePeerDependencies:
       - express
 
@@ -4127,11 +4127,11 @@ snapshots:
     dependencies:
       '@types/node': 20.19.39
 
-  '@vitejs/plugin-react@4.7.0(vite@4.5.14(@types/node@22.7.5))':
+  '@vitejs/plugin-react@4.7.0(supports-color@10.2.2)(vite@4.5.14(@types/node@22.7.5))':
     dependencies:
-      '@babel/core': 7.29.0
-      '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.29.0)
-      '@babel/plugin-transform-react-jsx-source': 7.27.1(@babel/core@7.29.0)
+      '@babel/core': 7.29.0(supports-color@10.2.2)
+      '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.29.0(supports-color@10.2.2))
+      '@babel/plugin-transform-react-jsx-source': 7.27.1(@babel/core@7.29.0(supports-color@10.2.2))
       '@rolldown/pluginutils': 1.0.0-beta.27
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
@@ -4139,15 +4139,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@waku/core@0.0.40(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)':
+  '@waku/core@0.0.40(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)(supports-color@10.2.2)':
     dependencies:
       '@libp2p/ping': 2.0.35
       '@noble/hashes': 1.8.0
-      '@waku/enr': 0.0.33(@multiformats/multiaddr@12.5.1)
+      '@waku/enr': 0.0.33(@multiformats/multiaddr@12.5.1)(supports-color@10.2.2)
       '@waku/interfaces': 0.0.34
       '@waku/proto': 0.0.15
-      '@waku/utils': 0.0.27
-      debug: 4.4.3
+      '@waku/utils': 0.0.27(supports-color@10.2.2)
+      debug: 4.4.3(supports-color@10.2.2)
       it-all: 3.0.11
       it-length-prefixed: 9.1.1
       it-pipe: 3.0.1
@@ -4159,14 +4159,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@waku/discovery@0.0.13(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)':
+  '@waku/discovery@0.0.13(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)(supports-color@10.2.2)':
     dependencies:
-      '@waku/core': 0.0.40(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)
-      '@waku/enr': 0.0.33(@multiformats/multiaddr@12.5.1)
+      '@waku/core': 0.0.40(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)(supports-color@10.2.2)
+      '@waku/enr': 0.0.33(@multiformats/multiaddr@12.5.1)(supports-color@10.2.2)
       '@waku/interfaces': 0.0.34
       '@waku/proto': 0.0.15
-      '@waku/utils': 0.0.27
-      debug: 4.4.3
+      '@waku/utils': 0.0.27(supports-color@10.2.2)
+      debug: 4.4.3(supports-color@10.2.2)
       dns-over-http-resolver: 3.0.16
       hi-base32: 0.5.1
       uint8arrays: 5.1.1
@@ -4175,14 +4175,14 @@ snapshots:
       - libp2p
       - supports-color
 
-  '@waku/enr@0.0.33(@multiformats/multiaddr@12.5.1)':
+  '@waku/enr@0.0.33(@multiformats/multiaddr@12.5.1)(supports-color@10.2.2)':
     dependencies:
       '@ethersproject/rlp': 5.8.0
       '@libp2p/crypto': 5.1.6
       '@libp2p/peer-id': 5.1.7
       '@noble/secp256k1': 1.7.2
-      '@waku/utils': 0.0.27
-      debug: 4.4.3
+      '@waku/utils': 0.0.27(supports-color@10.2.2)
+      debug: 4.4.3(supports-color@10.2.2)
       js-sha3: 0.9.3
     optionalDependencies:
       '@multiformats/multiaddr': 12.5.1
@@ -4195,7 +4195,7 @@ snapshots:
     dependencies:
       protons-runtime: 5.6.0
 
-  '@waku/sdk@0.0.36(@multiformats/multiaddr@12.5.1)':
+  '@waku/sdk@0.0.36(@multiformats/multiaddr@12.5.1)(supports-color@10.2.2)':
     dependencies:
       '@chainsafe/libp2p-noise': 16.1.3
       '@libp2p/bootstrap': 11.0.42
@@ -4205,12 +4205,12 @@ snapshots:
       '@libp2p/websockets': 9.2.16
       '@noble/hashes': 1.8.0
       '@types/lodash.debounce': 4.0.9
-      '@waku/core': 0.0.40(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)
-      '@waku/discovery': 0.0.13(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)
+      '@waku/core': 0.0.40(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)(supports-color@10.2.2)
+      '@waku/discovery': 0.0.13(@multiformats/multiaddr@12.5.1)(libp2p@2.8.11)(supports-color@10.2.2)
       '@waku/interfaces': 0.0.34
       '@waku/proto': 0.0.15
-      '@waku/sds': 0.0.8
-      '@waku/utils': 0.0.27
+      '@waku/sds': 0.0.8(supports-color@10.2.2)
+      '@waku/utils': 0.0.27(supports-color@10.2.2)
       libp2p: 2.8.11
       lodash.debounce: 4.0.8
     transitivePeerDependencies:
@@ -4219,23 +4219,23 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@waku/sds@0.0.8':
+  '@waku/sds@0.0.8(supports-color@10.2.2)':
     dependencies:
       '@libp2p/interface': 2.10.4
       '@noble/hashes': 1.8.0
       '@waku/proto': 0.0.15
-      '@waku/utils': 0.0.27
+      '@waku/utils': 0.0.27(supports-color@10.2.2)
       chai: 5.3.3
       lodash: 4.18.1
     transitivePeerDependencies:
       - supports-color
 
-  '@waku/utils@0.0.27':
+  '@waku/utils@0.0.27(supports-color@10.2.2)':
     dependencies:
       '@noble/hashes': 1.8.0
       '@waku/interfaces': 0.0.34
       chai: 4.5.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@10.2.2)
       uint8arrays: 5.1.1
     transitivePeerDependencies:
       - supports-color
@@ -4353,11 +4353,11 @@ snapshots:
 
   bn.js@5.2.3: {}
 
-  body-parser@1.20.5:
+  body-parser@1.20.5(supports-color@10.2.2):
     dependencies:
       bytes: 3.1.2
       content-type: 1.0.5
-      debug: 2.6.9
+      debug: 2.6.9(supports-color@10.2.2)
       depd: 2.0.0
       destroy: 1.2.0
       http-errors: 2.0.1
@@ -4645,13 +4645,17 @@ snapshots:
       it-sort: 3.0.11
       it-take: 3.0.11
 
-  debug@2.6.9:
+  debug@2.6.9(supports-color@10.2.2):
     dependencies:
       ms: 2.0.0
+    optionalDependencies:
+      supports-color: 10.2.2
 
-  debug@4.4.3:
+  debug@4.4.3(supports-color@10.2.2):
     dependencies:
       ms: 2.1.3
+    optionalDependencies:
+      supports-color: 10.2.2
 
   deep-eql@4.1.4:
     dependencies:
@@ -4879,26 +4883,26 @@ snapshots:
       md5.js: 1.3.5
       safe-buffer: 5.2.1
 
-  express-rate-limit@8.5.2(express@4.22.2):
+  express-rate-limit@8.5.2(express@4.22.2(supports-color@10.2.2)):
     dependencies:
-      express: 4.22.2
+      express: 4.22.2(supports-color@10.2.2)
       ip-address: 10.2.0
 
-  express@4.22.2:
+  express@4.22.2(supports-color@10.2.2):
     dependencies:
       accepts: 1.3.8
       array-flatten: 1.1.1
-      body-parser: 1.20.5
+      body-parser: 1.20.5(supports-color@10.2.2)
       content-disposition: 0.5.4
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.0.7
-      debug: 2.6.9
+      debug: 2.6.9(supports-color@10.2.2)
       depd: 2.0.0
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 1.3.2
+      finalhandler: 1.3.2(supports-color@10.2.2)
       fresh: 0.5.2
       http-errors: 2.0.1
       merge-descriptors: 1.0.3
@@ -4910,8 +4914,8 @@ snapshots:
       qs: 6.15.1
       range-parser: 1.2.1
       safe-buffer: 5.2.1
-      send: 0.19.2
-      serve-static: 1.16.3
+      send: 0.19.2(supports-color@10.2.2)
+      serve-static: 1.16.3(supports-color@10.2.2)
       setprototypeof: 1.2.0
       statuses: 2.0.2
       type-is: 1.6.18
@@ -4966,9 +4970,9 @@ snapshots:
     dependencies:
       to-regex-range: 5.0.1
 
-  finalhandler@1.3.2:
+  finalhandler@1.3.2(supports-color@10.2.2):
     dependencies:
-      debug: 2.6.9
+      debug: 2.6.9(supports-color@10.2.2)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
@@ -5115,11 +5119,11 @@ snapshots:
 
   interface-store@6.0.3: {}
 
-  ioredis@5.10.1:
+  ioredis@5.10.1(supports-color@10.2.2):
     dependencies:
       '@ioredis/commands': 1.5.1
       cluster-key-slot: 1.1.2
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@10.2.2)
       denque: 2.1.0
       lodash.defaults: 4.2.0
       lodash.isarguments: 3.1.0
@@ -5652,11 +5656,11 @@ snapshots:
     dependencies:
       find-up: 5.0.0
 
-  playwright-core@1.55.0: {}
+  playwright-core@1.55.1: {}
 
-  playwright@1.55.0:
+  playwright@1.55.1:
     dependencies:
-      playwright-core: 1.55.0
+      playwright-core: 1.55.1
     optionalDependencies:
       fsevents: 2.3.2
 
@@ -5901,9 +5905,9 @@ snapshots:
 
   semver@6.3.1: {}
 
-  send@0.19.2:
+  send@0.19.2(supports-color@10.2.2):
     dependencies:
-      debug: 2.6.9
+      debug: 2.6.9(supports-color@10.2.2)
       depd: 2.0.0
       destroy: 1.2.0
       encodeurl: 2.0.0
@@ -5919,12 +5923,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  serve-static@1.16.3:
+  serve-static@1.16.3(supports-color@10.2.2):
     dependencies:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       parseurl: 1.3.3
-      send: 0.19.2
+      send: 0.19.2(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
 
