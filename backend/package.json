@@ -25,7 +25,7 @@
     "express-rate-limit": "^8.5.2",
     "ioredis": "^5.10.1",
     "mixer-sdk": "workspace:*",
-    "protobufjs": "^8.5.0",
+    "protobufjs": "^8.6.6",
     "snarkjs": "^0.7.6",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",

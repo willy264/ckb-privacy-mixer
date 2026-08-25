@@ -51,8 +51,8 @@ importers:
         specifier: workspace:*
         version: link:../mixer-sdk
       protobufjs:
-        specifier: ^8.5.0
-        version: 8.5.0
+        specifier: ^8.6.6
+        version: 8.6.6
       snarkjs:
         specifier: ^0.7.6
         version: 0.7.6
@@ -121,8 +121,8 @@ importers:
         specifier: workspace:*
         version: link:../mixer-sdk
       protobufjs:
-        specifier: ^8.5.0
-        version: 8.5.0
+        specifier: ^8.6.6
+        version: 8.6.6
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -185,8 +185,8 @@ importers:
         specifier: ^0.1.7
         version: 0.1.7
       protobufjs:
-        specifier: ^8.5.0
-        version: 8.5.0
+        specifier: ^8.6.6
+        version: 8.6.6
       snarkjs:
         specifier: ^0.7.6
         version: 0.7.6
@@ -2442,8 +2442,8 @@ packages:
   progress-events@1.1.0:
     resolution: {integrity: sha512-82DVc5tI36neVB3IjdXR11ztwGuoBc98em9ijzubeZKxI47OlV2Znq6mlPqE5xPDzO2Uw98GHiQSjj2favBCRQ==}
 
-  protobufjs@8.5.0:
-    resolution: {integrity: sha512-df1jWDPA5VIBNRtuAHjqr09f2qN5D4Vke1wYqOQg1XJ7ZDpA7BD6L7E4tyChgGRLB5hqk2m79Zsy0WHwV9a84A==}
+  protobufjs@8.6.6:
+    resolution: {integrity: sha512-RkLIhE+Tdc2Kpq1F4Uw6OnpAXPca7B+GSDov/GqGCqNBpVyDskQ9yReZfgM+C7xw9AAix873iQZXbBWXj6NzYQ==}
     engines: {node: '>=12.0.0'}
 
   protons-runtime@5.6.0:
@@ -5710,7 +5710,7 @@ snapshots:
 
   progress-events@1.1.0: {}
 
-  protobufjs@8.5.0:
+  protobufjs@8.6.6:
     dependencies:
       long: 5.3.2
 
