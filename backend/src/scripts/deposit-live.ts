@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ccc } from '@ckb-ccc/core';
 import { getClient, getSigner, waitForTransaction, SHANNONS } from './ccc-common.js';
-import { deriveCommitment, randomBlindingFactor, generateStealthAddress } from 'mixer-sdk';
+import { deriveCommitment, randomBlindingFactor, generateStealthAddress } from 'mixer-sdk/legacy';
 
 async function main() {
     console.log('=== CKB Privacy Mixer: Solo Live Deposit ===');

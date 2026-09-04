@@ -152,27 +152,12 @@ export class MixSession {
     }
 
     public signAndSubmit(privateKey: string, participantId: string): Transaction | null {
-        this.checkTimeout();
-        if (this.state !== 'READY') {
-            throw new Error('Cannot sign unless session is READY');
-        }
-
-        const participant = this.participants.find(item => item.id === participantId);
-        if (!participant) {
-            throw new Error('Participant not found');
-        }
-
-        participant.signature = `0x_sig_${privateKey.substring(0, 4)}`;
-
-        const allSigned = this.participants.every(item => !!item.signature);
-        if (allSigned) {
-            const tx = this.buildTransaction();
-            tx.isSigned = true;
-            this.state = 'COMPLETED';
-            return tx;
-        }
-
-        return null;
+        void privateKey;
+        void participantId;
+        throw new Error(
+            'MixSession.signAndSubmit is a disabled legacy-demo API. It cannot sign or submit CKB transactions. ' +
+            'Use PrivacyClient with an injected operation-scoped CCC Signer when corrected V1 live operations are available.',
+        );
     }
 
     public checkSessionStatus(): SessionState {

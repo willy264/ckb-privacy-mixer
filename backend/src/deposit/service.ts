@@ -3,7 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
-import { generateStealthAddress } from 'mixer-sdk';
+import { generateStealthAddress } from 'mixer-sdk/legacy';
 import { buildMintedCtNote } from './note.js';
 import {
     cancelCoordinatorDepositParticipant,

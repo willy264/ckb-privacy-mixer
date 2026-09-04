@@ -8,7 +8,7 @@ import {
   type DepositNote as SdkDepositNote,
   type LocalWithdrawalProofResult,
   type WithdrawalTransaction,
-} from '../../mixer-sdk/dist/index.js';
+} from '../../mixer-sdk/dist/legacy/index.js';
 import { getGroth16ArtifactUrls, tryLoadFrontendRuntimeConfig } from './runtime';
 import { fetchDepositSession } from './relayer';
 import { signTransactionWithJoyId } from './joyid';

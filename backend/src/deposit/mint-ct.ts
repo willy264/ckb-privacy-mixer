@@ -3,7 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
-import { deriveCommitment } from 'mixer-sdk';
+import { deriveCommitment } from 'mixer-sdk/legacy';
 import { ccc } from '@ckb-ccc/core';
 import { requiredEnv, resolveWorkingEndpointPair, waitForTransaction } from './ccc.js';
 import { createCtInfoData, parseCtInfoData } from './obscell.js';

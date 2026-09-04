@@ -1,5 +1,5 @@
 import { ccc } from '@ckb-ccc/core';
-import { loadMixerRuntimeConfig } from 'mixer-sdk';
+import { loadMixerRuntimeConfig } from 'mixer-sdk/legacy';
 
 async function main() {
     const config = loadMixerRuntimeConfig({

@@ -3,20 +3,25 @@
   "version": "0.1.0",
   "description": "SDK for CKB Privacy Mixer",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/v1/index.js",
+  "types": "dist/v1/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/v1/index.js",
+      "types": "./dist/v1/index.d.ts"
+    },
+    "./legacy": {
+      "import": "./dist/legacy/index.js",
+      "types": "./dist/legacy/index.d.ts"
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "check:v1": "tsc -p tsconfig.v1.json",
+    "test": "pnpm run build && pnpm run check:v1 && node --test test/privacy-sdk.test.mjs"
   },
   "dependencies": {
     "@ckb-ccc/core": "^1.12.5",
-    "@ckb-ccc/joy-id": "^1.0.32",
     "@nervosnetwork/ckb-sdk-utils": "0.109.5",
     "@waku/interfaces": "^0.0.34",
     "@waku/sdk": "^0.0.36",

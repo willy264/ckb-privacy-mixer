@@ -9,6 +9,8 @@ import type {
 import { deriveNullifier, deriveNullifierHash } from '../utils/crypto.js';
 import { normalizeHex } from '../utils/encoding.js';
 import { serializeWithdrawalPublicInputsHex } from '../utils/proof.js';
+import { UnsupportedOperationError } from '../core/errors.js';
+import { assertHex32 } from '../crypto/field.js';
 
 const SPENT_NULLIFIERS = new Set<string>();
 const DEFAULT_DENOMINATION = 100n;
@@ -85,6 +87,13 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
         denomination = DEFAULT_DENOMINATION,
         recipientLock,
     } = params;
+
+    if (privateKey !== undefined) {
+        throw new UnsupportedOperationError(
+            'legacy withdrawal privateKey',
+            'private-key strings are not accepted by transaction builders',
+        );
+    }
 
     validateNote(note);
     validateRegistryCell(registryCell);
@@ -200,8 +209,7 @@ export async function buildWithdrawTransaction(params: LiveWithdrawalBuildParams
         serializedWitnessHex: proofWitnessHex,
         nullifier: normalizedNullifier,
         updatedRegistry,
-        isSigned: !!privateKey,
-        signature: privateKey ? `0x_withdraw_sig_${privateKey.slice(0, 8)}` : undefined,
+        isSigned: false,
         submission: {
             runtimeMode,
             authorityMode,
@@ -262,18 +270,24 @@ export async function withdrawMix(
     }
 
     if (!params) {
-        SPENT_NULLIFIERS.add(nullifier);
-        return `0xwithdraw_${nullifier.slice(0, 56)}`;
+        throw new UnsupportedOperationError(
+            'legacy withdrawMix',
+            'no withdrawal provider or live submission path was supplied',
+        );
     }
 
     const providerExecution = isProviderExecutionParams(params);
     const providerTx = await prepareLiveWithdrawTransaction(note, params);
 
-    SPENT_NULLIFIERS.add(providerTx.nullifier);
-
     if (providerExecution && params.provider.submitWithdrawal) {
-        return params.provider.submitWithdrawal(providerTx);
+        const transactionHash = await params.provider.submitWithdrawal(providerTx);
+        assertHex32(transactionHash, 'withdrawal transaction hash');
+        SPENT_NULLIFIERS.add(providerTx.nullifier);
+        return transactionHash;
     }
 
-    return `0xwithdraw_${providerTx.nullifier.slice(0, 56)}`;
+    throw new UnsupportedOperationError(
+        'legacy withdrawMix',
+        'the supplied provider cannot submit the prepared transaction',
+    );
 }
