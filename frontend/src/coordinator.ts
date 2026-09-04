@@ -1,5 +1,5 @@
 import { getCoordinatorUrl, getRelayerUrl, getWaku } from './relayer';
-import { publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk';
+import { publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk/legacy';
 
 
 export interface CoordinatorPoolSummary {
@@ -147,8 +147,8 @@ export class CoordinatorClient {
     }
 }
 
-import { deriveCommitment, randomBlindingFactor } from '../../mixer-sdk/dist/index.js';
-import type { DepositResult } from '../../mixer-sdk/dist/index.js';
+import { deriveCommitment, randomBlindingFactor } from '../../mixer-sdk/dist/legacy/index.js';
+import type { DepositResult } from '../../mixer-sdk/dist/legacy/index.js';
 import { signTransactionWithJoyId } from './joyid';
 
 /**
