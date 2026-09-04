@@ -80,7 +80,8 @@ template Mixer(levels) {
     
     nullifierHash === nullifierHasher.out;
 
-    // Bind recipient to the proof to prevent front-running
+    // Bind the recipient scalar inside this legacy proof only. The legacy
+    // transaction path does not bind it to the materialized payout output.
     signal recipientSquare;
     recipientSquare <== recipient * recipient;
 
