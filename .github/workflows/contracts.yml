@@ -1,4 +1,4 @@
-name: Protocol and Contracts
+name: Protocol, Contracts, and Services
 
 on:
   push:
@@ -77,14 +77,11 @@ jobs:
       - name: Ensure legacy vk.rs is up to date
         run: git diff --exit-code -- contracts/zk-membership-type/src/vk.rs
 
-      - name: Build mixer-sdk
-        run: pnpm --filter mixer-sdk build
+      - name: Build all JavaScript workspaces
+        run: pnpm run build
 
-      - name: Build backend
-        run: pnpm --filter ckb-mixer-backend build
-
-      - name: Test V1 withdrawal circuit
-        run: pnpm --filter circuits test
+      - name: Test SDK, backend V1, and circuits
+        run: pnpm test
 
       - name: Build and test legacy and V1 RISC-V contracts
         run: pnpm run test:contracts
