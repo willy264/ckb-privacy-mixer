@@ -167,7 +167,7 @@ The decisive test begins with a pre-existing user-owned supported CT cell and en
 
 ## 21. Limitations
 
-Corrected V1 currently has source-level and fail-closed covenant foundations but no deployable cryptographically connected on-chain transition set, trusted setup, production state verifier/scanner, or real Pudge end-to-end evidence. See `docs/known-limitations.md`. Nothing in this repository should be described as production-secure.
+The demo currently has source-level and fail-closed covenant foundations but no deployable cryptographically connected on-chain transition set, trusted setup, production state verifier/scanner, or real Pudge end-to-end evidence. See `docs/known-limitations.md`. Nothing in this repository should be described as production-secure.
 
 ## 22. Future V2 Work
 
