@@ -1,0 +1,104 @@
+// Normative corrected-V1 state schema. Multi-byte integers and field values are
+// unsigned little-endian. Semantic length/range constraints are in docs/protocol-v1.md.
+
+array Uint16 [byte; 2];
+array Uint32 [byte; 4];
+array Uint64 [byte; 8];
+array Uint128 [byte; 16];
+array Byte32 [byte; 32];
+
+vector Byte32Vec <Byte32>;
+vector Bytes <byte>;
+
+struct OutPointRef {
+    tx_hash: Byte32,
+    index: Uint32,
+}
+
+// Script-code references are pinned by both code hash and CKB hash type.
+struct ScriptCodeRefV1 {
+    code_hash: Byte32,
+    hash_type: byte,
+}
+
+// pool_id is the unique 32-byte Type-ID value carried in the PoolState
+// type-script args. Covenant args bind the full script hash separately, while
+// the proof system uses the distinct poolDomain.
+struct PoolTypeArgsV1 {
+    version: Uint16,
+    type_id: Byte32,
+    vault_lock: ScriptCodeRefV1,
+    staging_lock: ScriptCodeRefV1,
+}
+
+// Vault metadata belongs in lock args because cell data is owned by the
+// configured CT type. No plaintext Vault amount is encoded here.
+struct VaultLockArgsV1 {
+    version: Uint16,
+    pool_id: Byte32,
+    pool_type_hash: Byte32,
+    asset_id: Byte32,
+    denomination: Uint128,
+}
+
+struct StagingLockArgsV1 {
+    version: Uint16,
+    pool_id: Byte32,
+    pool_type_hash: Byte32,
+}
+
+struct PoolConfigV1 {
+    version: Uint16,
+    pool_id: Byte32,
+    asset_id: Byte32,
+    denomination: Uint128,
+    tree_depth: byte,
+    root_history_size: byte,
+    reserved: Uint16,
+}
+
+table PoolStateV1 {
+    config: PoolConfigV1,
+    sequence: Uint64,
+    commitment_root: Byte32,
+    nullifier_root: Byte32,
+    next_leaf_index: Uint32,
+    outstanding_count: Uint64,
+    outstanding_value: Uint128,
+    frontier: Byte32Vec,
+    accepted_roots: Byte32Vec,
+}
+
+table StagingDepositV1 {
+    version: Uint16,
+    pool_id: Byte32,
+    asset_id: Byte32,
+    denomination: Uint128,
+    commitment: Byte32,
+    refund_lock_hash: Byte32,
+    refund_since: Uint64,
+    capacity_reserve: Uint64,
+}
+
+// A staging cell's complete data is the CT type's 32-byte commitment followed
+// immediately by one canonical StagingDepositV1 table. This keeps the CT-owned
+// prefix intact while making the covenant metadata authoritative.
+
+struct WithdrawalPublicSignalsV1 {
+    pool_domain: Byte32,
+    asset_domain: Byte32,
+    denomination: Byte32,
+    value: Byte32,
+    root: Byte32,
+    nullifier_hash: Byte32,
+    recipient_domain: Byte32,
+    action_hash: Byte32,
+    auth_tag: Byte32,
+}
+
+table WithdrawalWitnessV1 {
+    version: Uint16,
+    public_signals: WithdrawalPublicSignalsV1,
+    proof: Bytes,
+    nullifier_update: Bytes,
+}

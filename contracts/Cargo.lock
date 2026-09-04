@@ -300,6 +300,7 @@ dependencies = [
  "buddy-alloc",
  "cc",
  "ckb-gen-types",
+ "ckb-hash",
  "gcd",
  "int-enum",
 ]
@@ -559,6 +560,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "obscell-v1-types"
+version = "0.1.0"
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -575,6 +580,14 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "pool-state-type-v1"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
+ "obscell-v1-types",
+]
 
 [[package]]
 name = "ppv-lite86"
@@ -727,6 +740,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "staging-lock-v1"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
+ "obscell-v1-types",
+]
+
+[[package]]
 name = "strum"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -802,6 +823,14 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "vault-lock-v1"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
+ "obscell-v1-types",
+]
 
 [[package]]
 name = "version_check"

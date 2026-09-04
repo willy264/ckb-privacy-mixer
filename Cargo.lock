@@ -694,6 +694,7 @@ dependencies = [
  "buddy-alloc",
  "cc",
  "ckb-gen-types",
+ "ckb-hash",
  "gcd",
  "int-enum",
 ]
@@ -1644,6 +1645,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "obscell-v1-types"
+version = "0.1.0"
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1747,6 +1752,14 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "pool-state-type-v1"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
+ "obscell-v1-types",
+]
 
 [[package]]
 name = "ppv-lite86"
@@ -1934,6 +1947,13 @@ dependencies = [
  "libc",
  "rustix",
  "windows",
+]
+
+[[package]]
+name = "registry-type"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
 ]
 
 [[package]]
@@ -2195,6 +2215,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "staging-lock-v1"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
+ "obscell-v1-types",
+]
+
+[[package]]
 name = "strum"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2266,8 +2294,10 @@ dependencies = [
  "ark-groth16",
  "ark-snark",
  "bulletproofs 5.0.1 (git+https://github.com/zkcrypto/bulletproofs?rev=04bce4e66013ff857ed462fd4206210544101461)",
+ "ckb-hash",
  "ckb-testtool",
  "curve25519-dalek",
+ "obscell-v1-types",
  "serde",
  "serde_json",
  "sha2",
@@ -2393,6 +2423,14 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vault-lock-v1"
+version = "0.1.0"
+dependencies = [
+ "ckb-std",
+ "obscell-v1-types",
+]
 
 [[package]]
 name = "version_check"

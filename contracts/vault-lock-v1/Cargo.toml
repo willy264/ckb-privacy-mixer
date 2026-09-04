@@ -1,0 +1,11 @@
+[package]
+name = "vault-lock-v1"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ckb-std = "=1.0.2"
+obscell-v1-types = { path = "../obscell-v1-types" }
+
+[features]
+library = []

@@ -1,0 +1,11 @@
+[package]
+name = "pool-state-type-v1"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ckb-std = { version = "=1.0.2", features = ["type-id"] }
+obscell-v1-types = { path = "../obscell-v1-types" }
+
+[features]
+library = []
