@@ -16,13 +16,17 @@ interface DeveloperViewProps {
   onOpenApplication: () => void;
 }
 
-const PROTOTYPE_API = `import { createPrivacyClient } from "@obscell/privacy";
+const SDK_API = `import { createPrivacyClient } from "mixer-sdk";
 
 const privacy = createPrivacyClient({
   client,
-  signer,
   deployment,
+  prover,
+  stateStore,
+  services,
 });
+
+const capabilities = await privacy.getCapabilities();
 
 await privacy.shield({
   poolId,
@@ -36,6 +40,7 @@ const balance = await privacy.getPrivateBalance({
 await privacy.unshield({
   noteId,
   recipient,
+  submission: { kind: "relayed", maxFee },
 });`;
 
 const architecture = [
@@ -66,13 +71,13 @@ export function DeveloperView({ onOpenApplication }: DeveloperViewProps) {
         </button>
       </header>
 
-      <aside className="demo-prototype-notice" aria-label="Prototype API status">
+      <aside className="demo-prototype-notice" aria-label="SDK foundation status">
         <Box className="demo-notice-icon" aria-hidden="true" />
         <div className="demo-notice-copy">
-          <strong className="demo-notice-title">Prototype API</strong>
+          <strong className="demo-notice-title">V1 SDK foundation</strong>
           <p className="demo-notice-text">
-            This is the intended integration shape, not a production SDK contract. Demo privacy
-            operations are simulated and are not submitted to CKB.
+            This API boundary now exists in source, but live settlement adapters are unavailable.
+            Demo privacy operations remain simulated and are not submitted to CKB.
           </p>
         </div>
       </aside>
@@ -85,17 +90,17 @@ export function DeveloperView({ onOpenApplication }: DeveloperViewProps) {
               <h2 id="demo-code-title" className="demo-section-title">
                 Integrate privacy
               </h2>
-              <p className="demo-section-description">A future PrivacyClient built around injected CCC primitives.</p>
+              <p className="demo-section-description">The source-level PrivacyClient built around injected CCC primitives.</p>
             </div>
           </div>
 
           <figure className="demo-code-editor">
             <figcaption className="demo-code-caption">
               <span className="demo-code-filename">privacy.ts</span>
-              <span className="demo-code-status">Conceptual interface</span>
+              <span className="demo-code-status">Foundation API</span>
             </figcaption>
-            <pre className="demo-code-block" tabIndex={0} aria-label="Prototype PrivacyClient integration example">
-              <code className="demo-code-content">{PROTOTYPE_API}</code>
+            <pre className="demo-code-block" tabIndex={0} aria-label="PrivacyClient foundation integration example">
+              <code className="demo-code-content">{SDK_API}</code>
             </pre>
           </figure>
         </section>
