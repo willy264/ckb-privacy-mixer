@@ -1,5 +1,7 @@
 # How Privacy Mixer Deposit Works
 
+> **Legacy prototype flow:** This page describes the pre-audit backend-mint/coordinator path, not corrected V1. Its live-Pudge statements are historical and are not current deployment evidence. Corrected V1 requires user-owned staging plus authoritative PoolState/Vault transitions and is not deployed; see `docs/status.md`.
+
 ## 1. Goal of the Deposit Flow
 
 The deposit flow creates a live 100 CT mixer note on CKB Pudge testnet while keeping the user's withdrawal secrets out of backend storage.

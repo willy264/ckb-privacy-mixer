@@ -1,5 +1,7 @@
 # CKB Privacy Mixer - May Week 4 Progress Report
 
+> **Historical legacy-prototype report:** The flow and broadcast statements below record the May implementation report and were not independently re-verified for corrected V1. They do not establish corrected-V1 atomicity, deployment, or end-to-end evidence. See `docs/status.md`.
+
 ## Overview
 This week focused heavily on debugging the end-to-end cryptographic and transaction construction flows for the deposit cycle. We successfully resolved several critical roadblocks spanning the backend Coordinator, the smart contract validation layer, and the Relayer polling mechanisms. We have now achieved a **fully functioning end-to-end deposit flow**, culminating in successful on-chain transaction broadcasts and local generation of the privacy notes.
 

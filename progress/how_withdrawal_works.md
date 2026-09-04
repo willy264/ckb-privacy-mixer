@@ -1,5 +1,7 @@
 # How Privacy Mixer Withdrawal Works
 
+> **Legacy prototype flow:** This page describes the pre-audit encrypted-note and registry-backed withdrawal path, not corrected V1. It is retained as implementation history and is not current Pudge or protocol-correct evidence; see `docs/status.md` and `docs/known-limitations.md`.
+
 ## 1. What the User Brings to Withdrawal
 
 The current withdrawal flow starts from an encrypted note, not from a browser vault or localStorage entry.

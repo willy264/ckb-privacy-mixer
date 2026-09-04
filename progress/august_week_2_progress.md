@@ -1,5 +1,7 @@
 # Obscell Privacy Mixer - August Week 2 Progress Report
 
+> **Historical status (superseded September 4, 2026):** The statements below describe the August 8-14 legacy-prototype work and its then-current plan. Corrected V1 now has a public SDK and fail-closed source-level circuit, contract, and service foundations, but it still has no deployable protocol transition set or corrected-V1 Pudge evidence. See `docs/status.md` and `docs/known-limitations.md` for current status.
+
 **Period:** August 8-14, 2026
 **Focus:** Completing and rehearsing the existing `100 CT` Pudge demo while converting the protocol audit into the next implementation phase.
 **Status:** Demo validation is in progress. The remediation plan is complete; protocol implementation and public SDK extraction have not started.

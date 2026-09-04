@@ -1,0 +1,76 @@
+{
+  "schema": "obscell-demo-evidence-v1",
+  "capturedAtUtc": "2026-09-04T17:17:51.046Z",
+  "evidenceMode": "deterministic-local-simulation",
+  "command": "pnpm --filter frontend capture:evidence",
+  "gitCommit": "73d85a8f9b7330dbeb265dba281ff1bb3c218dcb",
+  "workingTree": "dirty",
+  "browser": {
+    "channel": "chrome",
+    "version": "151.0.7922.174"
+  },
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 900
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    },
+    "legacy": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "networkRequestsDuringPrivacyOperations": 0,
+  "figure5": "absent-until-corrected-v1-pudge-e2e-passes",
+  "figure6": "captured-separately-by-examples/payment-app-browser-verifier",
+  "files": [
+    {
+      "name": "figure-1-legacy-mixer.png",
+      "bytes": 93788,
+      "sha256": "395ec0505fdf1992493857abfc8345ed124bf077fb30792148d060efac427c45"
+    },
+    {
+      "name": "figure-2-ccc-demo.png",
+      "bytes": 109533,
+      "sha256": "98ae81d0331ce97e941f88c4ff84f879db6493378099ffc2e64780a4dac4c531"
+    },
+    {
+      "name": "figure-3-private-balance.png",
+      "bytes": 113927,
+      "sha256": "dea7fb302c965f9e655d4c6bbbf8056cfdbe036310ac274885c11c682cddcbf4"
+    },
+    {
+      "name": "figure-4-developer-protocol.png",
+      "bytes": 146761,
+      "sha256": "e762845054b017de0db39f8311d450f1041677d8f045005dedeb927e3cea8da0"
+    },
+    {
+      "name": "obscell-demo-verified-desktop.png",
+      "bytes": 109187,
+      "sha256": "444d5a17f513cecc3d6d67fbe0fcc3a42d53774bd45c67c7154e32e7a54d52e0"
+    },
+    {
+      "name": "obscell-demo-verified-presentation.png",
+      "bytes": 107101,
+      "sha256": "2891f0ee50ee51db8da4522f5ff1efc5306199b0b5c997b79eaf941899ad2036"
+    },
+    {
+      "name": "obscell-demo-verified-mobile.png",
+      "bytes": 96449,
+      "sha256": "25356bf2241fe124a8bde2f72ca104fc31c2faef27589a9a9c0b64715a9271ea"
+    },
+    {
+      "name": "obscell-demo-verified-developer.png",
+      "bytes": 155375,
+      "sha256": "31a1814700675d9e2fd5130c8728dba697e65a05491ac5368f04656201b2101f"
+    },
+    {
+      "name": "obscell-demo-verified-protocol.png",
+      "bytes": 153424,
+      "sha256": "fc3c27d0a790011f250d1e3a2f2e7ef0c881ca5cc31088366e1ead1112f6b01e"
+    }
+  ]
+}

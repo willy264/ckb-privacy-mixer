@@ -1,4 +1,7 @@
 # Project Progress Summary: May 2026 (Week 2)
+
+> **Historical legacy-prototype report:** The "production-ready" and completion language below is superseded by the later protocol audit. It is preserved as contemporaneous project history and must not be used as corrected-V1 deployment, decentralization, or security evidence. See `docs/status.md` and `docs/known-limitations.md`.
+
 **Project:** CKB Privacy Mixer
 
 ### Overview
