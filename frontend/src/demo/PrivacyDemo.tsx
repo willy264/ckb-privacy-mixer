@@ -344,7 +344,7 @@ function ApplicationView({
             <span className="demo-eyebrow">Privacy operations</span>
             <p>
               {privacyEnabled
-                ? "Future SDK operations are available through the existing CCC session."
+                ? "Preview simulated privacy workflows through the existing CCC application state."
                 : "Enable Private mode to add the Obscell capability to this application."}
             </p>
           </div>
