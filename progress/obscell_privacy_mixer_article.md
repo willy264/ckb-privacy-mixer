@@ -1,5 +1,7 @@
 # Introducing Obscell Privacy Mixer: a zero-knowledge withdrawal mixer prototype on Nervos CKB
 
+> **Historical prototype article:** This article predates the corrected-V1 audit. Its mixer flow and privacy claims apply only to the legacy prototype and do not establish atomic recipient, asset, Vault, root, nullifier, or CT-conservation enforcement. Current status is recorded in `docs/status.md`; the original article remains below as historical evidence.
+
 Hello everyone,
 
 I have been building **Obscell Privacy Mixer**, a privacy-preserving mixer prototype on Nervos CKB. It is currently running as an MVP on **Pudge testnet**, and I would like to share what has been built, how the current deposit and withdrawal flow works, the external infrastructure I have studied or used, and the areas where I would like direct feedback from the CKB community.

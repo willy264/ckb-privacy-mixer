@@ -1,5 +1,7 @@
 # CKB Privacy Mixer — Architecture & Production Comparison
 
+> **Historical document:** This comparison predates the August/September 2026 protocol audit. Statements about recipient binding, Merkle authority, or production readiness describe the legacy prototype and are superseded by `docs/research.md`, `docs/protocol-v1.md`, and `docs/known-limitations.md`. The original text is preserved below as project history.
+>
 > Analysis date: May 31, 2026  
 > Scope: How mixers work, real-world comparisons, codebase review, issues, and missing implementation
 

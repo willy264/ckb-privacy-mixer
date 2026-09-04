@@ -1,4 +1,7 @@
 # Title
+
+> **Historical draft:** This issue text predates the corrected-V1 audit. Its live-flow and privacy language describes the legacy prototype and is not current deployment, anonymity, or security evidence. See `docs/status.md`.
+
 Obscell Privacy Mixer: a zero-knowledge coin mixer for Nervos CKB. 
 
 # Body
