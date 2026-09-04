@@ -1,0 +1,27 @@
+{
+  "name": "obscell-payment-example",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "prebuild": "pnpm --dir ../.. --filter mixer-sdk build",
+    "build": "tsc && vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "test": "pnpm run build && tsx --test test/payment-app.test.ts",
+    "test:browser": "pnpm run build && node scripts/verify-example.mjs",
+    "capture:evidence": "pnpm run build && node scripts/verify-example.mjs ../../docs/evidence/figure-6-second-consumer.png"
+  },
+  "dependencies": {
+    "@ckb-ccc/core": "^1.12.5",
+    "mixer-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "playwright": "1.55.1",
+    "tsx": "4.22.1",
+    "typescript": "^5.0.2",
+    "vite": "^6.4.3",
+    "vite-plugin-node-polyfills": "^0.26.0"
+  }
+}
