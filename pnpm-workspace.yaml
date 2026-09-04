@@ -1,4 +1,5 @@
 packages:
+  - 'circuits'
   - 'mixer-sdk'
   - 'frontend'
   - 'backend'

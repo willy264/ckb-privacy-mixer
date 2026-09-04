@@ -1,0 +1,6 @@
+*.ptau
+*.r1cs
+*.sym
+*.wtns
+*.zkey
+*_js/
