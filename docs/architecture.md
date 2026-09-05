@@ -1,5 +1,7 @@
 # Architecture
 
+**Status:** Target corrected-V1 architecture. The diagrams below specify the grant destination and trust boundaries; they do not depict a deployed system. Today, PoolState initialization/acceptance/withdrawal fail closed, non-fixture Pudge scanner/storage/transaction adapters are absent, and no corrected-V1 Pudge flow has run. See [implementation status](status.md) for the evidence-backed boundary.
+
 ## System
 
 ```mermaid
@@ -28,7 +30,7 @@ flowchart LR
     E --> G[Authoritative CT balance]
 ```
 
-The staging output commits to pool identity, asset, denomination, leaf, refund lock, and timeout. Acceptance consumes the live PoolState/Vault pair and confirmed staging cells atomically. A coordinator may build the transaction, but CKB validation decides whether it is accepted.
+The implemented staging foundation commits to pool identity, asset, denomination, leaf, refund lock, and timeout. In the completed design, acceptance will consume the live PoolState/Vault pair and confirmed staging cells atomically. A coordinator may build the transaction, but CKB validation must decide whether it is accepted.
 
 ## Withdrawal
 
@@ -42,7 +44,7 @@ flowchart LR
     F --> G[Recipient spends CT with normal CCC signer]
 ```
 
-The proof binds pool, asset, denomination/value, accepted root, nullifier, recipient, action, and authorization tag. The Pool script must recompute protected fields from actual transaction data before accepting the transition.
+The corrected circuit foundation binds pool, asset, denomination/value, supplied root, nullifier, recipient, action, and authorization tag. The unfinished Pool script must recompute protected fields from actual transaction and canonical state data before it may accept the transition.
 
 ## Trust Boundary
 
@@ -75,7 +77,7 @@ flowchart TB
     RD --- IX
 ```
 
-Client secrets never belong in coordinator, relayer, indexer, Redis, logs, telemetry, or transaction witnesses. Wiping Redis may lose queues or cached progress, but must not change protocol truth.
+Under the target trust model, client secrets never belong in coordinator, relayer, indexer, Redis, logs, telemetry, or transaction witnesses. Wiping Redis may lose queues or cached progress, but must not change protocol truth. The clean rebuild and reorganization behavior shown here remains a grant acceptance test.
 
 ## SDK
 
@@ -93,7 +95,7 @@ flowchart TD
     CCC --> CKB[CKB]
 ```
 
-The SDK does not own React, JoyID, wallet selection, deployment keys, relayer hot keys, Redis, analytics, or product UI. Wallet connectors remain application concerns. A signer is supplied only to the operation that needs user approval.
+The SDK boundary does not own React, JoyID, wallet selection, deployment keys, relayer hot keys, Redis, analytics, or product UI. Wallet connectors remain application concerns. A signer is supplied only to the operation that needs user approval. The current SDK exposes this boundary and fails unavailable settlement operations explicitly; the live adapters in the diagram remain grant work.
 
 ## State Ownership
 
@@ -110,4 +112,4 @@ The SDK does not own React, JoyID, wallet selection, deployment keys, relayer ho
 
 ## Identity And Versioning
 
-Corrected V1 uses fresh script code hashes, Type-IDs, pool IDs, circuit artifact hashes, and a versioned deployment manifest. Legacy registry cells and coordinator sessions are never V1 genesis inputs. Network, genesis hash, code hashes, outpoints, script args, circuit hashes, tree depth, denomination, and CT identity must all match before `getCapabilities()` may report settlement as available.
+A corrected-V1 deployment will use fresh script code hashes, Type-IDs, pool IDs, circuit artifact hashes, and a versioned deployment manifest. None exists today. Legacy registry cells and coordinator sessions must never be V1 genesis inputs. Network, genesis hash, code hashes, outpoints, script args, circuit hashes, tree depth, denomination, and CT identity must all match before `getCapabilities()` may report settlement as available.

@@ -75,7 +75,7 @@ The application owns JoyID or other connector setup, modals, password prompts, p
 
 ## 6. Second Consumer Test
 
-`examples/payment-app` is a minimal independent consumer that imports only the public package entry point and supplies its own CCC-shaped client, transient store, indexer, verifier, and UI. Its deterministic fixture proves package/API separation and zero submission; it is not live-chain evidence. A valid release must replace those fixtures with real application-owned adapters and exercise the same public API on Pudge. Shared source copied from the reference wallet would not prove reusability.
+`examples/payment-app` is a minimal separate applicant-authored consumer that imports only the public package entry point and supplies its own CCC-shaped client, transient store, indexer, verifier, and UI. Its deterministic fixture proves package/API separation and zero submission; it is not third-party adoption or live-chain evidence. A valid release must replace those fixtures with real application-owned adapters and exercise the same public API on Pudge. Shared source copied from the reference wallet would not prove reusability.
 
 ## 7. Before Enabling Live Controls
 
