@@ -1,11 +1,10 @@
 use super::*;
+use ark_bn254::{Fq, Fq2, Fr, G2Affine};
+use ark_ec::AffineRepr;
+use ark_ff::{BigInteger, PrimeField};
 use ckb_testtool::builtin::ALWAYS_SUCCESS;
 use ckb_testtool::ckb_types::{
-    bytes::Bytes,
-    core::TransactionBuilder,
-    core::TransactionView,
-    packed::*,
-    prelude::*,
+    bytes::Bytes, core::TransactionBuilder, core::TransactionView, packed::*, prelude::*,
 };
 use ckb_testtool::context::Context;
 use serde::Deserialize;
@@ -45,12 +44,16 @@ fn repo_root() -> PathBuf {
 fn read_public_inputs_bytes() -> Bytes {
     let path = repo_root().join("circuits").join("public.json");
     let signals = serde_json::from_str::<Vec<String>>(&fs::read_to_string(path).unwrap()).unwrap();
-    assert_eq!(signals.len(), 3, "fixture must contain root, nullifier, and recipient");
+    assert_eq!(
+        signals.len(),
+        3,
+        "fixture must contain root, nullifier, and recipient"
+    );
 
     let mut bytes = Vec::with_capacity(96);
     for signal in signals {
-      let value = BigIntBytes::from_decimal_string(&signal);
-      bytes.extend_from_slice(&value.to_le_bytes_32());
+        let value = BigIntBytes::from_decimal_string(&signal);
+        bytes.extend_from_slice(&value.to_le_bytes_32());
     }
     Bytes::from(bytes)
 }
@@ -72,10 +75,7 @@ impl BigIntBytes {
             return Self(out);
         }
 
-        let mut decimal = value
-            .bytes()
-            .map(|byte| byte - b'0')
-            .collect::<Vec<_>>();
+        let mut decimal = value.bytes().map(|byte| byte - b'0').collect::<Vec<_>>();
         let mut out = [0u8; 32];
         for byte in &mut out {
             let mut carry = 0u16;
@@ -105,6 +105,40 @@ impl BigIntBytes {
 
 fn pack_decimal_32(value: &str, out: &mut Vec<u8>) {
     out.extend_from_slice(&BigIntBytes::from_decimal_string(value).to_le_bytes_32());
+}
+
+fn add_le_bytes_in_place(value: &mut [u8], addend: &[u8]) {
+    assert_eq!(value.len(), 32);
+    assert_eq!(addend.len(), 32);
+
+    let mut carry = 0u16;
+    for (byte, addend_byte) in value.iter_mut().zip(addend) {
+        let sum = u16::from(*byte) + u16::from(*addend_byte) + carry;
+        *byte = sum as u8;
+        carry = sum >> 8;
+    }
+    assert_eq!(carry, 0, "test alias must fit in 32 bytes");
+}
+
+fn fq_to_le_bytes(value: Fq) -> [u8; 32] {
+    let encoded = value.into_bigint().to_bytes_le();
+    let mut bytes = [0u8; 32];
+    bytes[..encoded.len()].copy_from_slice(&encoded);
+    bytes
+}
+
+fn non_subgroup_g2_point() -> G2Affine {
+    for c0 in 0u64..1024 {
+        for c1 in 0u64..8 {
+            let x = Fq2::new(Fq::from(c0), Fq::from(c1));
+            if let Some(point) = G2Affine::get_point_from_x_unchecked(x, false) {
+                if !point.is_zero() && !point.is_in_correct_subgroup_assuming_on_curve() {
+                    return point;
+                }
+            }
+        }
+    }
+    panic!("failed to construct deterministic non-subgroup G2 test point");
 }
 
 pub(crate) fn pack_proof_bytes(proof: &ProofJson) -> Vec<u8> {
@@ -179,9 +213,18 @@ fn build_zk_membership_context(
 
     let tx = TransactionBuilder::default()
         .cell_deps(vec![verifier_script_dep, always_success_script_dep])
-        .inputs(vec![CellInput::new_builder().previous_output(input_out_point).build()])
+        .inputs(vec![
+            CellInput::new_builder()
+                .previous_output(input_out_point)
+                .build(),
+        ])
         .outputs(outputs)
-        .outputs_data(outputs_data.into_iter().map(|data| data.pack()).collect::<Vec<_>>())
+        .outputs_data(
+            outputs_data
+                .into_iter()
+                .map(|data| data.pack())
+                .collect::<Vec<_>>(),
+        )
         .witnesses(vec![witness.as_bytes().pack()])
         .build();
 
@@ -204,17 +247,59 @@ fn test_zk_membership_invalid_proof_bytes_fail() {
     let public_inputs = read_public_inputs_bytes();
     let mut witness_data = read_proof_bytes().to_vec();
     witness_data[0] ^= 0xff;
-    let (context, tx) = build_zk_membership_context(public_inputs, Bytes::from(witness_data), false);
+    let (context, tx) =
+        build_zk_membership_context(public_inputs, Bytes::from(witness_data), false);
     let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     assert_script_error(result, ERROR_INVALID_PROOF_DATA);
 }
 
 #[test]
-fn test_zk_membership_wrong_public_input_order_fails() {
+fn test_zk_membership_rejects_noncanonical_public_input_alias() {
     let mut public_inputs = read_public_inputs_bytes().to_vec();
-    public_inputs[..32].reverse();
+    add_le_bytes_in_place(&mut public_inputs[..32], &Fr::MODULUS.to_bytes_le());
+
     let witness_data = read_proof_bytes();
-    let (context, tx) = build_zk_membership_context(Bytes::from(public_inputs), witness_data, false);
+    let (context, tx) =
+        build_zk_membership_context(Bytes::from(public_inputs), witness_data, false);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
+    assert_script_error(result, ERROR_INVALID_PROOF_DATA);
+}
+
+#[test]
+fn test_zk_membership_rejects_noncanonical_proof_coordinate_alias() {
+    let public_inputs = read_public_inputs_bytes();
+    let mut witness_data = read_proof_bytes().to_vec();
+    add_le_bytes_in_place(&mut witness_data[..32], &Fq::MODULUS.to_bytes_le());
+
+    let (context, tx) =
+        build_zk_membership_context(public_inputs, Bytes::from(witness_data), false);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
+    assert_script_error(result, ERROR_INVALID_PROOF_DATA);
+}
+
+#[test]
+fn test_zk_membership_rejects_g2_point_outside_prime_order_subgroup() {
+    let public_inputs = read_public_inputs_bytes();
+    let mut witness_data = read_proof_bytes().to_vec();
+    let point = non_subgroup_g2_point();
+    witness_data[64..96].copy_from_slice(&fq_to_le_bytes(point.x.c1));
+    witness_data[96..128].copy_from_slice(&fq_to_le_bytes(point.x.c0));
+    witness_data[128..160].copy_from_slice(&fq_to_le_bytes(point.y.c1));
+    witness_data[160..192].copy_from_slice(&fq_to_le_bytes(point.y.c0));
+
+    let (context, tx) =
+        build_zk_membership_context(public_inputs, Bytes::from(witness_data), false);
+    let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
+    assert_script_error(result, ERROR_INVALID_PROOF_DATA);
+}
+
+#[test]
+fn test_zk_membership_wrong_public_input_fails() {
+    let mut public_inputs = read_public_inputs_bytes().to_vec();
+    public_inputs[0] ^= 0x01;
+    let witness_data = read_proof_bytes();
+    let (context, tx) =
+        build_zk_membership_context(Bytes::from(public_inputs), witness_data, false);
     let result = context.verify_tx(&tx, ZK_VERIFY_CYCLES);
     assert_script_error(result, ERROR_INVALID_MERKLE_ROOT);
 }

@@ -2,8 +2,13 @@
 [workspace]
 resolver = "2"
 members = [
+    "contracts/obscell-v1-types",
+    "contracts/pool-state-type-v1",
+    "contracts/vault-lock-v1",
+    "contracts/staging-lock-v1",
     "contracts/mixer-pool-type",
     "contracts/nullifier-type",
+    "contracts/registry-type",
     "contracts/zk-membership-type",
     "tests",
     "tools/ct-mint-helper",

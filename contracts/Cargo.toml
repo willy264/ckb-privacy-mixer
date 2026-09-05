@@ -1,6 +1,12 @@
 [workspace]
+resolver = "2"
 members = [
+    "obscell-v1-types",
+    "pool-state-type-v1",
+    "vault-lock-v1",
+    "staging-lock-v1",
     "mixer-pool-type",
-    "nullifier-type", "registry-type",
+    "nullifier-type",
+    "registry-type",
     "zk-membership-type"
 ]

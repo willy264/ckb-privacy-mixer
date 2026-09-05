@@ -9,7 +9,8 @@
     "build:frontend": "pnpm --filter frontend build",
     "build:sdk": "pnpm --filter mixer-sdk build",
     "preview": "pnpm --filter frontend preview",
-    "test:contracts": "cargo test --locked -p tests -j 1"
+    "build:contracts": "node scripts/run-contract-tests.mjs --build-only",
+    "test:contracts": "node scripts/run-contract-tests.mjs"
   },
   "dependencies": {
     "@ckb-ccc/core": "^1.12.5",
