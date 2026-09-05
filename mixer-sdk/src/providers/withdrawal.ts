@@ -14,6 +14,8 @@ import type {
 } from '../types/withdrawal.js';
 import { reconstructWithdrawalProof } from '../utils/proof.js';
 import { normalizeHex } from '../utils/encoding.js';
+import { UnsupportedOperationError } from '../core/errors.js';
+import { assertOperationSigner } from '../ccc/signer.js';
 
 function parseOutPoint(value: string) {
     const [txHash, index] = value.split(':');
@@ -48,27 +50,7 @@ function isAddressLike(value: string): boolean {
     return value.startsWith('ckb1') || value.startsWith('ckt1');
 }
 
-function createCccClient(config: MixerRuntimeConfig) {
-    return new ccc.ClientPublicTestnet({
-        url: config.ckbRpcUrl,
-    });
-}
-
-async function parseAddressScriptWithCcc(address: string, config: MixerRuntimeConfig): Promise<CkbScript> {
-    const client = createCccClient(config);
-    const resolved = await ccc.Address.fromString(address, client);
-    const hashType = resolved.script.hashType === 'data2'
-        ? 'data1'
-        : resolved.script.hashType;
-    return {
-        codeHash: resolved.script.codeHash,
-        hashType,
-        args: resolved.script.args,
-    };
-}
-
-async function getKnownSecpCellDep(config: MixerRuntimeConfig): Promise<CkbCellDep> {
-    const client = createCccClient(config);
+async function getKnownSecpCellDep(client: ccc.Client): Promise<CkbCellDep> {
     const scriptInfo = await client.getKnownScript(ccc.KnownScript.Secp256k1Blake160);
     const cellDepInfo = scriptInfo.cellDeps[0];
     return {
@@ -91,14 +73,19 @@ export class MemoryWithdrawalProvider implements LiveWithdrawalProvider {
         return this.resolution;
     }
 
-    async submitWithdrawal(tx: WithdrawalTransaction, privateKey?: string): Promise<string> {
-        return `0xsubmitted_${tx.nullifier.slice(0, 56)}`;
+    async submitWithdrawal(_tx: WithdrawalTransaction, _privateKey?: string): Promise<string> {
+        throw new UnsupportedOperationError(
+            'legacy memory withdrawal submission',
+            'an in-memory provider cannot broadcast a CKB transaction',
+        );
     }
 }
 
 export interface EnvBackedWithdrawalProviderOptions {
     config: MixerRuntimeConfig;
     denomination?: bigint;
+    /** Injected CCC client. Omitted only for source compatibility; network methods then fail explicitly. */
+    client?: ccc.Client;
 }
 
 export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
@@ -162,25 +149,27 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
     }
 
     async broadcastSignedWithdrawal(tx: CkbTransaction): Promise<string> {
-        const client = createCccClient(this.options.config);
+        const client = this.requireClient();
         return client.sendTransaction(ccc.Transaction.from(tx as any));
     }
 
-    async submitWithdrawal(tx: WithdrawalTransaction, privateKey?: string): Promise<string> {
-        if (!privateKey) {
-            throw new Error('privateKey is required to submit a real withdrawal transaction');
-        }
+    async submitWithdrawal(_tx: WithdrawalTransaction, _privateKey?: string): Promise<string> {
+        throw new UnsupportedOperationError(
+            'legacy private-key withdrawal submission',
+            'private-key strings are not accepted; inject an operation-scoped CCC Signer',
+        );
+    }
 
-        const client = createCccClient(this.options.config);
-        const signer = new ccc.SignerCkbPrivateKey(client, privateKey);
+    async submitWithdrawalWithSigner(tx: WithdrawalTransaction, signer: ccc.Signer): Promise<string> {
+        const client = this.requireClient();
+        assertOperationSigner(client, signer);
         const feePayerAddress = await signer.getRecommendedAddress();
-        
         const { cccTx } = await this.buildNativeCccTxWithFeePayer(tx, feePayerAddress);
         return signer.sendTransaction(cccTx);
     }
 
     private async buildNativeCccTxWithFeePayer(tx: WithdrawalTransaction, feePayerAddress: string): Promise<{ cccTx: ccc.Transaction, client: ccc.Client }> {
-        const client = createCccClient(this.options.config);
+        const client = this.requireClient();
         const cccTx = ccc.Transaction.from({});
         
         for (const dep of tx.rawTransaction.cellDeps) {
@@ -199,7 +188,7 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
                 });
             }
         }
-        cccTx.addCellDeps(await getKnownSecpCellDep(this.options.config));
+        cccTx.addCellDeps(await getKnownSecpCellDep(client));
 
         for (const input of tx.rawTransaction.inputs) {
             const outPoint = parseOutPoint(input.previousOutput);
@@ -333,7 +322,7 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             };
         }
 
-        const client = createCccClient(config);
+        const client = this.requireClient();
         const liveCell = await client.getCellLive({
             txHash: registryRef.txHash,
             index: registryRef.index,
@@ -358,6 +347,16 @@ export class AggronWithdrawalProvider implements LiveWithdrawalProvider {
             capacity: registryRef.capacity ?? `0x${liveCell.cellOutput.capacity.toString(16)}`,
             typeArgs: registryRef.typeArgs,
         };
+    }
+
+    private requireClient(): ccc.Client {
+        if (!this.options.client) {
+            throw new UnsupportedOperationError(
+                'legacy Aggron withdrawal provider',
+                'a CCC Client must be injected in EnvBackedWithdrawalProviderOptions.client',
+            );
+        }
+        return this.options.client;
     }
 }
 

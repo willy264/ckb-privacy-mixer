@@ -10,7 +10,7 @@
  * The relayer CANNOT steal funds — the ZK proof constrains the output
  * destination on-chain, enforced by the `zk-membership-type` contract.
  */
-import { initWaku, publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk';
+import { initWaku, publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk/legacy';
 import type { LightNode } from '@waku/sdk';
 
 let wakuNode: LightNode | null = null;

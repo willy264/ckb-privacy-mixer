@@ -1,5 +1,5 @@
-import { deriveNullifier } from 'mixer-sdk';
-import type { DepositNote } from 'mixer-sdk';
+import { deriveNullifier } from 'mixer-sdk/legacy';
+import type { DepositNote } from 'mixer-sdk/legacy';
 
 export interface MintedCtNoteParams {
     sessionId: string;

@@ -1,0 +1,57 @@
+{
+  "protocolVersion": "obscell-v1",
+  "hash": "poseidon-tree-v1",
+  "field": "bn254-fr",
+  "fieldHexEncoding": "0x-prefixed 32-byte big-endian numeric text",
+  "integerEncoding": "canonical unsigned integer converted to Fr without reduction",
+  "actionTag": {
+    "label": "obscell/v1/action",
+    "decimal": "37579152220638682011312746748890030760559"
+  },
+  "tree": {
+    "identity": "Poseidon(ACTION_TAG, kind, poolDomain, assetDomain, denomination, value)",
+    "state": "Poseidon(ACTION_TAG, acceptedRoot, nullifierHash, currentStateSequence, nextStateSequence)",
+    "payout": "Poseidon(ACTION_TAG, recipientDomain, recipientCtCommitmentHash, recipientCtDataHash, recipientOutputIndex, recipientOutputCapacity, vaultInputAmount, vaultOutputAmount)",
+    "result": "Poseidon(ACTION_TAG, identity, state, payout)"
+  },
+  "context": {
+    "kind": "withdraw",
+    "poolDomain": "1",
+    "assetDomain": "2",
+    "denomination": "100",
+    "value": "100",
+    "acceptedRoot": "3",
+    "nullifierHash": "4",
+    "currentStateSequence": "9",
+    "nextStateSequence": "10",
+    "recipientDomain": "5",
+    "recipientCtCommitmentHash": "6",
+    "recipientCtDataHash": "7",
+    "recipientOutputIndex": 2,
+    "recipientOutputCapacity": "14200000000",
+    "vaultInputAmount": "500",
+    "vaultOutputAmount": "400"
+  },
+  "actionHash": {
+    "decimal": "13685217466721876604237706493027632204519774613291764078362466433229789684289",
+    "hex": "0x1e418f0002b67ee001619d65906bd60fe56777aaddbd7321e851dae119356241"
+  },
+  "mutationFields": [
+    "kind",
+    "poolDomain",
+    "assetDomain",
+    "denomination",
+    "value",
+    "acceptedRoot",
+    "nullifierHash",
+    "currentStateSequence",
+    "nextStateSequence",
+    "recipientDomain",
+    "recipientCtCommitmentHash",
+    "recipientCtDataHash",
+    "recipientOutputIndex",
+    "recipientOutputCapacity",
+    "vaultInputAmount",
+    "vaultOutputAmount"
+  ]
+}
