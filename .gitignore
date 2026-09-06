@@ -34,10 +34,12 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+~$*.docx
 
 # Local tool caches
 .eslintcache
 .worktrees/
+__pycache__/
 
 # Local-only files
 mixer_comparison.txt

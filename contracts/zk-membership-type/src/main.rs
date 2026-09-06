@@ -1,14 +1,17 @@
 #![no_std]
 #![no_main]
 
-
-
+use alloc::vec;
+use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
+use ark_ec::AffineRepr;
+use ark_ff::{BigInteger256, PrimeField};
+use ark_groth16::{Groth16, Proof};
+use ark_snark::SNARK;
 use ckb_std::{
     ckb_constants::Source,
     error::SysError,
     high_level::{load_cell_data, load_witness_args},
 };
-
 
 mod error;
 use error::Error;
@@ -18,6 +21,8 @@ pub mod vk;
 ckb_std::entry!(program_entry);
 ckb_std::default_alloc!(16384, 1258306, 64);
 
+// This remains the three-signal legacy-demo verifier. Canonical decoding hardens
+// its existing ABI; it does not make the legacy verifying key a V1 artifact.
 const HASH_BYTES: usize = 32;
 const PUBLIC_INPUTS_BYTES: usize = HASH_BYTES * 3;
 
@@ -40,13 +45,6 @@ fn count_group_cells(source: Source) -> Result<usize, Error> {
     Ok(count)
 }
 
-use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
-use ark_ff::PrimeField;
-use ark_groth16::Groth16;
-use ark_snark::SNARK;
-use ark_groth16::Proof;
-use alloc::vec;
-
 fn validate() -> Result<(), Error> {
     if count_group_cells(Source::GroupInput)? != 0 || count_group_cells(Source::GroupOutput)? != 1 {
         return Err(Error::InvalidCellCount);
@@ -56,16 +54,22 @@ fn validate() -> Result<(), Error> {
     if output_data.len() != PUBLIC_INPUTS_BYTES {
         return Err(Error::InvalidProofData);
     }
-    
+
     // Public Inputs: [root, nullifierHash, recipient]
-    let root_bytes: [u8; 32] = output_data[..32].try_into().map_err(|_| Error::InvalidProofData)?;
-    let nullifier_bytes: [u8; 32] = output_data[32..64].try_into().map_err(|_| Error::InvalidProofData)?;
-    let recipient_bytes: [u8; 32] = output_data[64..96].try_into().map_err(|_| Error::InvalidProofData)?;
+    let root_bytes: [u8; 32] = output_data[..32]
+        .try_into()
+        .map_err(|_| Error::InvalidProofData)?;
+    let nullifier_bytes: [u8; 32] = output_data[32..64]
+        .try_into()
+        .map_err(|_| Error::InvalidProofData)?;
+    let recipient_bytes: [u8; 32] = output_data[64..96]
+        .try_into()
+        .map_err(|_| Error::InvalidProofData)?;
 
     let public_inputs = vec![
-        Fr::from_le_bytes_mod_order(&root_bytes[..]),
-        Fr::from_le_bytes_mod_order(&nullifier_bytes[..]),
-        Fr::from_le_bytes_mod_order(&recipient_bytes[..]),
+        decode_fr(&root_bytes)?,
+        decode_fr(&nullifier_bytes)?,
+        decode_fr(&recipient_bytes)?,
     ];
 
     let witness_args = load_witness_args(0, Source::Input).map_err(|_| Error::InvalidProofData)?;
@@ -78,7 +82,7 @@ fn validate() -> Result<(), Error> {
     if proof_bytes.len() != 256 {
         return Err(Error::InvalidProofData);
     }
-    
+
     let vk = vk::get_vk();
     let proof = decode_packed_proof(&proof_bytes[..])?;
 
@@ -92,18 +96,32 @@ fn validate() -> Result<(), Error> {
     Ok(())
 }
 
-fn decode_fq(bytes: &[u8]) -> Result<Fq, Error> {
+fn decode_big_integer(bytes: &[u8]) -> Result<BigInteger256, Error> {
     if bytes.len() != 32 {
         return Err(Error::InvalidProofData);
     }
-    Ok(Fq::from_le_bytes_mod_order(bytes))
+
+    let mut limbs = [0u64; 4];
+    for (limb, chunk) in limbs.iter_mut().zip(bytes.chunks_exact(8)) {
+        *limb = u64::from_le_bytes(chunk.try_into().map_err(|_| Error::InvalidProofData)?);
+    }
+    Ok(BigInteger256::new(limbs))
+}
+
+fn decode_fr(bytes: &[u8]) -> Result<Fr, Error> {
+    Fr::from_bigint(decode_big_integer(bytes)?).ok_or(Error::InvalidProofData)
+}
+
+fn decode_fq(bytes: &[u8]) -> Result<Fq, Error> {
+    Fq::from_bigint(decode_big_integer(bytes)?).ok_or(Error::InvalidProofData)
 }
 
 fn decode_g1(x_bytes: &[u8], y_bytes: &[u8]) -> Result<G1Affine, Error> {
     let x = decode_fq(x_bytes)?;
     let y = decode_fq(y_bytes)?;
     let point = G1Affine::new_unchecked(x, y);
-    if !point.is_on_curve() {
+    if point.is_zero() || !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve()
+    {
         return Err(Error::InvalidProofData);
     }
     Ok(point)
@@ -118,7 +136,8 @@ fn decode_g2(
     let x = Fq2::new(decode_fq(x_c0_bytes)?, decode_fq(x_c1_bytes)?);
     let y = Fq2::new(decode_fq(y_c0_bytes)?, decode_fq(y_c1_bytes)?);
     let point = G2Affine::new_unchecked(x, y);
-    if !point.is_on_curve() {
+    if point.is_zero() || !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve()
+    {
         return Err(Error::InvalidProofData);
     }
     Ok(point)
@@ -126,7 +145,12 @@ fn decode_g2(
 
 fn decode_packed_proof(bytes: &[u8]) -> Result<Proof<Bn254>, Error> {
     let a = decode_g1(&bytes[0..32], &bytes[32..64])?;
-    let b = decode_g2(&bytes[96..128], &bytes[64..96], &bytes[160..192], &bytes[128..160])?;
+    let b = decode_g2(
+        &bytes[96..128],
+        &bytes[64..96],
+        &bytes[160..192],
+        &bytes[128..160],
+    )?;
     let c = decode_g1(&bytes[192..224], &bytes[224..256])?;
 
     Ok(Proof { a, b, c })

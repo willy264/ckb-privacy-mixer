@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "declaration": false
+  },
+  "include": [
+    "src/v1/index.ts",
+    "src/types/declarations.d.ts"
+  ],
+  "exclude": []
+}

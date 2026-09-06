@@ -1,4 +1,7 @@
 # Project Progress Summary: April 2026
+
+> **Historical legacy-prototype report:** Completion, deployment, and "production-ready" statements below record the April report and were not independently re-verified for corrected V1. They are not corrected-V1 deployment or security evidence. See `docs/status.md` for current status.
+
 **Projects:** CKB Privacy Mixer & CKB Token SDK
 
 ### Overview

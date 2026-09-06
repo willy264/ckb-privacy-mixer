@@ -13,7 +13,7 @@ import {
 } from '../coordinator/client.js';
 import { logger } from '../utils/logger.js';
 import { redis } from '../utils/redis.js';
-import { initWaku, subscribeToWakuMessages, publishWakuMessage } from 'mixer-sdk';
+import { initWaku, subscribeToWakuMessages, publishWakuMessage } from 'mixer-sdk/legacy';
 
 import { rateLimit } from 'express-rate-limit';
 

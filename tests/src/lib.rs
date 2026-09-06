@@ -10,6 +10,10 @@ mod nullifier_tests;
 mod zk_membership_tests;
 #[cfg(test)]
 mod withdrawal_integration_tests;
+#[cfg(test)]
+mod v1_circuit_vectors;
+#[cfg(test)]
+mod v1_contract_tests;
 
 /// Loads binaries needed by tests.
 /// - Our contracts: built into workspace target/ by `cargo build --release --target riscv64imac-unknown-none-elf`

@@ -1,4 +1,4 @@
-import { deriveCommitment, deriveNullifierHash } from "mixer-sdk";
+import { deriveCommitment, deriveNullifierHash } from "mixer-sdk/legacy";
 import {
   fetchFinalizedDepositNote,
   type DepositRecoveryResult

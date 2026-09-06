@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test:demo": "pnpm build && pnpm test:demo:client && pnpm test:demo:browser",
+    "capture:evidence": "pnpm build && pnpm test:demo:client && node scripts/verify-demo.mjs docs/evidence",
     "test:demo:browser": "node scripts/verify-demo.mjs",
     "test:demo:client": "tsx scripts/verify-demo-client.ts",
     "preview": "vite preview"

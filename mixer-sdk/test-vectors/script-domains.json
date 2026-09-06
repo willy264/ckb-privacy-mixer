@@ -1,0 +1,62 @@
+{
+  "protocolVersion": "obscell-v1",
+  "field": "bn254-fr",
+  "fieldHexEncoding": "0x-prefixed 32-byte big-endian numeric text",
+  "wireFieldEncoding": "unsigned 32-byte little-endian integer",
+  "scriptSerialization": {
+    "id": "ckb-molecule-script-v1",
+    "producer": "@ckb-ccc/core@1.12.5 Script.from(script).toBytes()",
+    "schema": "Molecule table(code_hash: Byte32, hash_type: byte, args: Bytes)"
+  },
+  "byteSponge": {
+    "chunkBytes": 31,
+    "chunkOrder": "sequential",
+    "chunkIntegerEncoding": "unsigned-little-endian",
+    "padding": "none",
+    "initialState": "Poseidon(domainTag, byteLength)",
+    "recurrence": "state[i+1] = Poseidon(domainTag, state[i], i, unsignedLE(chunk[i]))",
+    "ambiguityRule": "byteLength and chunk index are bound; trailing zero bytes are significant"
+  },
+  "domainTags": {
+    "pool": {
+      "label": "obscell/v1/pool-domain",
+      "decimal": "41309899991747519888704453617591040893247879457759855"
+    },
+    "asset": {
+      "label": "obscell/v1/asset-domain",
+      "decimal": "10575334397887365102090322506591695426555347104112534127"
+    },
+    "recipient": {
+      "label": "obscell/v1/recipient-domain",
+      "decimal": "45420715383190084605289120156104723986515770652502532529291747951"
+    }
+  },
+  "script": {
+    "codeHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "hashType": "type",
+    "args": "0x0100",
+    "moleculeBytes": "0x37000000100000003000000031000000111111111111111111111111111111111111111111111111111111111111111101020000000100"
+  },
+  "domains": {
+    "pool": "0x08a09fe512664afde2c274bebec8799480f8153a4d11c9abcf322084316d003b",
+    "asset": "0x03c02117f8862f041ab975d08f4cf30c25a48c6047316ecccb4a59cbc0ddedb6",
+    "recipient": "0x184105cc924aa4355b84bf82626d0e7cb344b16a289330bae1833fad7ff0ce4c"
+  },
+  "scriptMutation": {
+    "args": "0x0101",
+    "moleculeBytes": "0x37000000100000003000000031000000111111111111111111111111111111111111111111111111111111111111111101020000000101",
+    "recipientDomain": "0x0444db5c1fa43d5406fd0105ebfa766c3cfe722fe77deb70064b96ef46199560"
+  },
+  "trailingZeroVectors": [
+    {
+      "bytes": "0x01",
+      "domain": "recipientCtData",
+      "result": "0x18778406869d2e47100b9dff0e4614efe8ce10fcf7445b8cc1d81240179d6d1d"
+    },
+    {
+      "bytes": "0x0100",
+      "domain": "recipientCtData",
+      "result": "0x0c522cff61dc473c3633f62b66c45e21c11697d6b794e23bbf010a6bb3f5a562"
+    }
+  ]
+}

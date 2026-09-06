@@ -25,7 +25,7 @@ import {
 import { buildUnsignedDepositFinalization, finalizeSignedDepositRound } from './deposit-finalizer.js';
 import { buildCoinJoinTransaction, recordSignature, broadcastCoinJoin } from './session.js';
 import { logger } from '../utils/logger.js';
-import { initWaku, subscribeToWakuMessages, publishWakuMessage } from 'mixer-sdk';
+import { initWaku, subscribeToWakuMessages, publishWakuMessage } from 'mixer-sdk/legacy';
 
 interface WsJoinMessage {
     type: 'join';

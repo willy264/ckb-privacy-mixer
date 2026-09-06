@@ -11,6 +11,7 @@
     "start:relayer": "tsx src/relayer/server.ts",
     "start": "node dist/index.js",
     "build": "tsc",
+    "test:v1": "tsx --test test/v1-foundation.test.ts",
     "lint": "eslint . --ext ts --max-warnings 0"
   },
   "dependencies": {
