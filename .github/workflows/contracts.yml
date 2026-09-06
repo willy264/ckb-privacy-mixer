@@ -10,9 +10,14 @@ env:
 permissions:
   contents: read
 
+permissions:
+  contents: read
+
 jobs:
   protocol-and-contracts:
+  protocol-and-contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     timeout-minutes: 60
 
     steps:
@@ -20,19 +25,52 @@ jobs:
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
         with:
           toolchain: nightly-2026-03-25
+          toolchain: nightly-2026-03-25
           targets: riscv64imac-unknown-none-elf
+          components: rust-src, rustfmt, clippy
           components: rust-src, rustfmt, clippy
 
       - uses: pnpm/action-setup@v4
         with:
           version: 10.32.1
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          node-version: 24
           cache: pnpm
+
+      - name: Cache pinned Circom compiler
+        id: circom-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/circom
+          key: ${{ runner.os }}-${{ runner.arch }}-circom-2.2.3-ad44e915a12bb047b05745c2884aad9cc8326bc6
+
+      - name: Install pinned Circom 2.2.3
+        if: steps.circom-cache.outputs.cache-hit != 'true'
+        run: >-
+          cargo install
+          --git https://github.com/iden3/circom.git
+          --rev ad44e915a12bb047b05745c2884aad9cc8326bc6
+          --locked
+          circom
+
+      - name: Verify pinned toolchains
+        shell: bash
+        run: |
+          test "$(node --version | cut -d. -f1)" = "v24"
+          test "$(pnpm --version)" = "10.32.1"
+          test "$(rustup show active-toolchain | cut -d' ' -f1)" = "nightly-2026-03-25-x86_64-unknown-linux-gnu"
+          test "$(circom --version)" = "circom compiler 2.2.3"
+          rustup component list --installed | grep -Fx 'rust-src'
+          rustfmt --version
+          cargo clippy --version
 
       - name: Cache pinned Circom compiler
         id: circom-cache
@@ -73,7 +111,13 @@ jobs:
         run: |
           pnpm --filter ckb-mixer-backend exec tsx ../scripts/generate-vk-rs.ts
           rustfmt --edition 2024 contracts/zk-membership-type/src/vk.rs
+      - name: Regenerate legacy Groth16 verification key
+        run: |
+          pnpm --filter ckb-mixer-backend exec tsx ../scripts/generate-vk-rs.ts
+          rustfmt --edition 2024 contracts/zk-membership-type/src/vk.rs
 
+      - name: Ensure legacy vk.rs is up to date
+        run: git diff --exit-code -- contracts/zk-membership-type/src/vk.rs
       - name: Ensure legacy vk.rs is up to date
         run: git diff --exit-code -- contracts/zk-membership-type/src/vk.rs
 

@@ -26,7 +26,7 @@
     "@waku/interfaces": "^0.0.34",
     "@waku/sdk": "^0.0.36",
     "circomlibjs": "^0.1.7",
-    "protobufjs": "^8.5.0",
+    "protobufjs": "^8.6.6",
     "snarkjs": "^0.7.6"
   },
   "devDependencies": {
