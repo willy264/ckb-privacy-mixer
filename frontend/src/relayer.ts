@@ -6,9 +6,9 @@
  * ZK proof to a Relayer. The Relayer pays the CKB gas fee and broadcasts
  * the transaction, then deducts a small service fee from the withdrawal amount.
  *
- * The relayer CANNOT steal funds — the ZK proof constrains the output
- * The relayer CANNOT steal funds — the ZK proof constrains the output
- * destination on-chain, enforced by the `zk-membership-type` contract.
+ * Legacy limitation: the proof carries a recipient scalar, but this client and
+ * `zk-membership-type` do not atomically bind it to the materialized recipient
+ * output. This path must not be treated as theft-resistant corrected V1 relay.
  */
 import { initWaku, publishWakuMessage, subscribeToWakuMessages } from 'mixer-sdk/legacy';
 import type { LightNode } from '@waku/sdk';
@@ -159,7 +159,8 @@ export async function fetchRelayerInfo(endpoint = getRelayerUrl()): Promise<Rela
 /**
  * POST the ZK proof to the relayer.
  *
- * The user's JoyID wallet is NOT used here — preserving full anonymity.
+ * The user's JoyID wallet is not used as this transaction's fee payer. This
+ * does not hide IP, timing, service, amount, or other correlation metadata.
  * Returns a job ID immediately; the transaction is broadcast asynchronously.
  */
 export async function submitToRelayer(

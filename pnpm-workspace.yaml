@@ -3,3 +3,5 @@ packages:
   - 'mixer-sdk'
   - 'frontend'
   - 'backend'
+  - 'circuits'
+  - 'examples/*'

@@ -1,6 +1,6 @@
 # Implementation Status
 
-**As of:** 2026-09-04
+**As of:** 2026-09-05
 
 `Implemented` means code exists and a listed local test has run. It does not mean deployed, audited, or production-ready.
 
@@ -8,7 +8,7 @@
 |---|---|---|
 | Legacy implementation preserved and isolated | Implemented | `legacy-demo/README.md`, `?view=legacy`, and `mixer-sdk/legacy`; the package root is V1-only |
 | CCC-oriented reference experience | Implemented simulation | `frontend/src/demo/`; browser verification |
-| Independent public-SDK consumer | Implemented deterministic fixture | `examples/payment-app`; unit/browser checks; no live settlement claim |
+| Separate applicant-authored public-SDK consumer | Implemented deterministic fixture | `examples/payment-app`; unit/browser checks; no live settlement or third-party adoption claim |
 | Injected CCC Client and operation-scoped Signer | Foundation implemented | `mixer-sdk/src/ccc/`, `createPrivacyClient` tests |
 | Strict V1 field/proof encodings | Foundation implemented | SDK canonical encoding tests and verifier parser tests |
 | Frozen nine-signal circuit source | Foundation implemented | versioned source under `circuits/`; no new trusted setup claimed |
@@ -24,7 +24,7 @@
 | Proof-system benchmark on corrected workload | Partial local measurement | Disposable Groth16/snarkjs proof measured; CKB-VM verification and alternative systems remain unmeasured |
 | Real corrected-V1 Pudge E2E | Not run | All 20 runbook assertions remain open |
 | Recipient subsequent CT spend | Not run | Requires real Pudge recipient output |
-| Redis wipe/rebuild and reorg test | Interface only | Production state verifier/scanner, checkpoint implementation, and test required |
+| Redis wipe/rebuild and reorg test | Interface only | Non-fixture Pudge state verifier/scanner, checkpoint implementation, and test required |
 | Independent security review | Not performed | Planned grant deliverable; local tests are not an audit |
 
 No transaction hashes, deployments, confirmations, balance values, or security-review results are asserted by this status page.

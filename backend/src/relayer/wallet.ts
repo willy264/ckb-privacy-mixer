@@ -6,8 +6,9 @@ import { logger } from '../utils/logger.js';
  * RelayerWallet
  *
  * Wraps the relayer's funded CKB private key.
- * This key ONLY pays network transaction fees.
- * It cannot redirect withdrawal outputs — those are enforced by the on-chain ZK proof.
+ * Legacy limitation: this key pays fees and signs the legacy transaction, but
+ * the legacy proof does not atomically bind the materialized recipient output.
+ * This wallet is not a corrected-V1 trust boundary.
  */
 export class RelayerWallet {
     private readonly privateKey: string;

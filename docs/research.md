@@ -1,6 +1,6 @@
 # Research And Design Record
 
-**Status:** Living engineering record, updated 2026-09-04. It describes the repository honestly; it is not a security audit or deployment report.
+**Status:** Living engineering record, updated 2026-09-05. It describes the repository honestly; it is not a security audit or deployment report.
 
 ## 1. Problem Statement
 
@@ -167,7 +167,7 @@ The decisive test begins with a pre-existing user-owned supported CT cell and en
 
 ## 21. Limitations
 
-The demo currently has source-level and fail-closed covenant foundations but no deployable cryptographically connected on-chain transition set, trusted setup, production state verifier/scanner, or real Pudge end-to-end evidence. See `docs/known-limitations.md`. Nothing in this repository should be described as production-secure.
+Corrected V1 currently has source-level and fail-closed covenant foundations but no deployable cryptographically connected on-chain transition set, trusted setup, non-fixture Pudge state verifier/scanner, or real Pudge end-to-end evidence. See `docs/known-limitations.md`. Nothing in this repository should be described as production-secure.
 
 ## 22. Future V2 Work
 

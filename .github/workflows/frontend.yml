@@ -7,22 +7,34 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+permissions:
+  contents: read
+
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter mixer-sdk build
-      - run: pnpm --filter frontend build
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium and system dependencies
+        run: pnpm --filter frontend exec playwright install --with-deps chromium
+
+      - name: Build and verify the independent SDK consumer
+        run: pnpm --filter obscell-payment-example test:browser
+
+      - name: Build and verify the browser demo
+        run: pnpm --filter frontend test:demo

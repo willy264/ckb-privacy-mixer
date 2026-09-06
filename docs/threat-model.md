@@ -19,25 +19,37 @@ Assets are Vault CT, user withdrawal authority, note secrets, state availability
 
 ## Threats
 
-| Threat | Required control | Current status |
+The controls below describe requirements for the completed protocol. The status column prevents a target control from being mistaken for current protection.
+
+| Threat or failure | Required rejecting/recovery layer | Current status |
 |---|---|---|
-| Forged or unaccepted Merkle root | Pool script compares proof root with live/retained PoolState roots | Script pending |
-| Double withdrawal | Atomic absent-to-spent nullifier update in PoolState | SMT/script pending |
-| Recipient substitution | Proof auth tag plus script-recomputed recipient/action domains | Circuit foundation; script pending |
-| Asset/value substitution | Immutable pool config, exact CT type, `value = denomination`, vault delta checks | SDK/circuit foundation; scripts pending |
-| Vault inflation or underpayment | CT conservation/range proof plus PoolState/Vault arithmetic | CT remediation pending |
-| Stale-state race | Exact PoolState/Vault outpoints and sequence; CKB input conflict; private-store checkpoint CAS | SDK/service/store foundation; scripts and persistent store pending |
-| Relayer adds typed asset input/change | Rebuild transaction and allow untyped capacity only | Service validation foundation |
-| Coordinator fabricates acceptance | Discover confirmed staging and validate transition on chain | Interface foundation; scanner/script pending |
-| Redis loss changes truth | Rebuild from chain; Redis only queue/cache/lock | Interface foundation; rebuild pending |
-| Non-canonical Fr/Fq malleability | Fixed 32-byte decoding and `< modulus` checks, no reduction | SDK/circuit rules; verifier hardening pending |
-| Invalid/infinity/subgroup proof point | Canonical coordinate, nonzero, curve, subgroup validation | Verifier implementation/tests pending |
-| Secret exfiltration | Local generation, authenticated encryption, no service/telemetry fields | Memory/CAS store foundation; encrypted persistent V1 store pending |
-| Fake success/evidence | Typed lifecycle; hash only from submitter; committed only after chain observation | V1 services foundation; preserved legacy paths explicitly labeled |
-| Reorg makes note incorrectly spendable | Checkpoint block hashes, rollback notes/roots/operations | Scanner pending |
-| Frontend supply-chain compromise | Artifact pinning, CSP/reproducible build, offline verification | Pending |
-| Timing/network correlation | Relayer option, operational guidance, no absolute anonymity claim | Partial; residual risk |
-| Denial of service | Permissionless builders, refund timeout, bounded witnesses/state | Protocol implementation pending |
+| Replayed withdrawal or nullifier reuse | Circuit binds a pool/index-derived nullifier; PoolState proves an atomic SMT absent-to-spent transition | Circuit foundation; SMT/script pending |
+| Wrong or unaccepted Merkle root | Pool script derives the permitted current/retained roots from canonical PoolState | Script pending |
+| Wrong CT asset | Immutable pool configuration plus exact staging, Vault, and recipient CT type checks | Structural checks; CT completion pending |
+| Wrong denomination or value | Circuit checks `value = denomination`; scripts derive configured value and exact Vault/output delta | Circuit foundation; script/CT completion pending |
+| Recipient substitution | Circuit authorization tag binds recipient/action; Pool script recomputes both from the actual output/transaction | Circuit and SDK foundation; script pending |
+| Action-hash or typed-intent mutation | Canonical action derivation, proof binding, relayer reconstruction, byte-level transaction inspection | SDK/service foundation; non-fixture Pudge inspector/script pending |
+| Malformed proof or public encoding | Exact proof/public ABI, canonical Fr/Fq ranges, strict field count/order, no modular reduction | SDK/Rust parser tests; corrected verifier pending |
+| Invalid, infinity, off-curve, or wrong-subgroup proof point | On-chain verifier performs canonical-coordinate, non-infinity, curve, and subgroup checks before pairing | Legacy verifier hardening tests; corrected verifier pending |
+| Stale PoolState/Vault | Exact outpoints and sequence, ordinary CKB input conflict, client-store checkpoint CAS | SDK/service/store foundation; live script/reorg evidence pending |
+| PoolState/Vault mismatch | Both scripts require the exact sibling pair and synchronized successor sequence/accounting | Structural foundation; successful transitions pending |
+| Vault lookalike or false provenance | Pinned PoolState type hash, pool ID, asset ID, code refs, unique input/output shape | Structural foundation; deployment evidence pending |
+| Fake CT mint or forged identity | Versioned issuance authority and exact CT type identity | CT remediation pending |
+| CT inflation, underpayment, or conservation failure | CT range/conservation proof plus exact PoolState/Vault arithmetic and recipient output | CT remediation pending |
+| Unauthorized staging acceptance | Resolve a canonically confirmed staging cell and validate all committed fields in the atomic acceptance transition | Covenant/service foundation; scanner and transition pending |
+| Premature or redirected refund | Relative `since`, committed refund lock, unchanged CT commitment/value/capacity | Structural refund path tested with placeholder asset; real CT evidence pending |
+| Relayer network-fee manipulation or typed fee input/change | User network-fee ceiling, transaction reconstruction, untyped CKB-capacity-only fee inputs and change | Service validation tests; non-fixture Pudge inspector pending |
+| Coordinator fabrication or race | Chain discovery, deterministic outpoint order, singleton input conflict; losing worker re-resolves | Interface/planner foundation; live competing-worker evidence pending |
+| Redis loss changes protocol truth | Redis remains queue/cache/lock only; scanner rebuilds roots/nullifiers/operations from canonical chain | Interface foundation; clean rebuild pending |
+| Service restart or uncertain broadcast | Typed lifecycle, locally derived canonical hash, retained nullifier lock, chain reconciliation | Local lifecycle tests; Pudge-capable hasher/worker pending |
+| Chain reorganization | Block-hash checkpoints, rollback to common ancestor, replay canonical events, demote notes/operations | Scanner/recovery pending |
+| Encrypted note corruption or loss | Authenticated encryption, versioned backup/recovery, corruption tests, no service copy | Legacy AES-GCM and V1 abstraction; durable V1 store pending |
+| Secret exfiltration to service/logs | Local generation/proving; service DTOs omit secrets; telemetry rules and leak tests | Typed interfaces exist; persistent-store and leak-test completion pending |
+| Recipient output cannot be spent | Exact recipient output construction followed by a mandatory spend with the recipient's independent CCC signer | Pudge acceptance gate |
+| Fake success or fabricated evidence | Typed operation lifecycle; `committed` only from canonical observation; manifests/runbook disclose evidence class | V1 service foundation and honest UI labels; release evidence pending |
+| Wallet/browser compromise | Least-secret API, authenticated storage, CSP/reproducible build, user guidance | Least-secret corrected-V1 API and honest labels exist; CSP and clean-release reproducibility remain pending, and a malicious signer/origin is outside full protocol protection |
+| Timing, network, and anonymity-set correlation | Fixed notes, optional relayer, operational guidance, explicit privacy limitations | Residual risk; no absolute anonymity claim |
+| Denial of service | Permissionless candidate builders, refund timeout, bounded state/witnesses/batches | Protocol implementation pending |
 
 ## Privacy Properties And Non-Properties
 
