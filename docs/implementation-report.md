@@ -84,4 +84,4 @@ Connect and adversarially test the fail-closed scripts and CT rules, complete in
 
 ## 20. Reproduction
 
-Local commands and results are in `docs/test-report.md`. Build and validate the reviewer-facing Word document from the authoritative Markdown with `python scripts/build-grant-proposal-docx.py`; the output is `Obscell_CKB_Community_DAO_Proposal_15K_Grant_Ready.docx`. Exact deployment/E2E commands cannot be honest until the missing scripts and manifest exist; that gap is explicit in the runbook.
+Local commands and results are in `docs/test-report.md`. Grant proposal sources, generated funding documents, and their packaging tool are maintained locally and intentionally excluded from Git. Exact deployment/E2E commands cannot be honest until the missing scripts and manifest exist; that gap is explicit in the runbook.

@@ -80,7 +80,8 @@ The default page is the CCC-oriented application concept. Its privacy operations
 - [Pudge runbook](docs/pudge-runbook.md)
 - [Deployment guide](docs/deployment.md)
 - [Test vectors](docs/test-vectors.md)
-- [Grant proposal](docs/grant-proposal.md)
 - [Implementation report](docs/implementation-report.md)
+
+Grant proposal and funding materials are maintained locally and are intentionally not tracked in this repository.
 
 Obscell is testnet-first research software. Do not use it to protect assets of value.

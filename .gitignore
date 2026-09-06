@@ -46,6 +46,11 @@ mixer_comparison.txt
 vendor/
 scripts/deployment_results.json
 
+# Grant proposal materials containing funding amounts
+/docs/grant-proposal.*
+/scripts/build-grant-proposal-docx.py
+/Obscell_CKB_Community_DAO_Proposal_*.docx
+
 # Embedded external repo
 obscell-source/
 
