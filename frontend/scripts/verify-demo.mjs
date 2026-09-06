@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +11,12 @@ import { preview } from "vite";
 import { ccc } from "@ckb-ccc/core";
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const screenshotDirectory = process.env.DEMO_SCREENSHOT_DIR ?? os.tmpdir();
+const repositoryRoot = path.resolve(frontendRoot, "..");
+const configuredScreenshotDirectory = process.argv[2] ?? process.env.DEMO_SCREENSHOT_DIR;
+const screenshotDirectory = configuredScreenshotDirectory
+  ? path.resolve(repositoryRoot, configuredScreenshotDirectory)
+  : os.tmpdir();
+fs.mkdirSync(screenshotDirectory, { recursive: true });
 const testRecipient = ccc.Address.from({
   prefix: "ckt",
   script: {
@@ -27,7 +34,11 @@ async function launchBrowser() {
   const failures = [];
   for (const options of attempts) {
     try {
-      return await chromium.launch({ ...options, headless: true });
+      const browser = await chromium.launch({ ...options, headless: true });
+      return {
+        browser,
+        channel: options.channel ?? "playwright-bundled",
+      };
     } catch (error) {
       failures.push(error);
     }
@@ -70,9 +81,12 @@ if (!baseUrl) {
 const errors = [];
 const privacyNetworkRequests = [];
 let browser;
+let browserChannel;
 
 try {
-  browser = await launchBrowser();
+  const launched = await launchBrowser();
+  browser = launched.browser;
+  browserChannel = launched.channel;
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   let recordPrivacyNetwork = false;
   page.on("console", (message) => {
@@ -91,6 +105,10 @@ try {
   await page.goto(baseUrl, { waitUntil: "networkidle", timeout: 60_000 });
   await page.getByRole("heading", { name: "Opt into privacy. Keep CCC." }).waitFor();
   assert.match(await page.locator("body").innerText(), /privacy operations are protocol simulations/i);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "figure-2-ccc-demo.png"),
+    fullPage: true,
+  });
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -109,6 +127,10 @@ try {
   const balanceValues = page.locator(".demo-balance-item > strong");
   assert.match(await balanceValues.nth(0).innerText(), /^0\s+CT$/);
   assert.match(await balanceValues.nth(1).innerText(), /^100\s+CT$/);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "figure-3-private-balance.png"),
+    fullPage: true,
+  });
 
   await page.getByRole("button", { name: "Payment App" }).click();
   await page.getByRole("heading", { name: "CKB Payment App" }).waitFor();
@@ -141,10 +163,14 @@ try {
     path: path.join(screenshotDirectory, "obscell-demo-verified-protocol.png"),
     fullPage: true,
   });
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "figure-4-developer-protocol.png"),
+    fullPage: true,
+  });
 
   await page.getByRole("tab", { name: "Developer View" }).click();
   await page.getByRole("heading", { name: /Add privacy to an application already using CCC/ }).waitFor();
-  assert.match(await page.locator(".demo-developer-view").innerText(), /Prototype API/);
+  assert.match(await page.locator(".demo-developer-view").innerText(), /V1 SDK foundation/);
   assert.match(await page.locator(".demo-code-content").innerText(), /createPrivacyClient/);
   await page.screenshot({
     path: path.join(screenshotDirectory, "obscell-demo-verified-developer.png"),
@@ -214,6 +240,10 @@ try {
     legacyText,
     /Maximum \(Relay\)|withdrawal is anonymous|Latest deposits|Anonymity set/i,
   );
+  await legacy.screenshot({
+    path: path.join(screenshotDirectory, "figure-1-legacy-mixer.png"),
+    fullPage: true,
+  });
 
   const legacyHonestySource = [
     "src/components/StatsSidebar.tsx",
@@ -224,37 +254,78 @@ try {
     .join("\n");
   assert.doesNotMatch(legacyHonestySource, /Math\.random|Maximum \(Relay\)|is anonymous/i);
 
-  console.log(
-    JSON.stringify(
-      {
-        status: "passed",
-        interactions: [
-          "privacy opt-in",
-          "shield",
-          "shared payment-app state",
-          "CCC recipient validation",
-          "payment preview",
-          "mode persistence",
-          "developer view",
-          "protocol view",
-          "unshield",
-          "reset",
-          "legacy route",
-          "legacy honesty boundary",
-        ],
-        networkRequestsDuringPrivacyOperations: privacyNetworkRequests.length,
-        screenshots: [
-          path.join(screenshotDirectory, "obscell-demo-verified-desktop.png"),
-          path.join(screenshotDirectory, "obscell-demo-verified-presentation.png"),
-          path.join(screenshotDirectory, "obscell-demo-verified-mobile.png"),
-          path.join(screenshotDirectory, "obscell-demo-verified-developer.png"),
-          path.join(screenshotDirectory, "obscell-demo-verified-protocol.png"),
-        ],
+  const screenshotPaths = [
+    path.join(screenshotDirectory, "figure-1-legacy-mixer.png"),
+    path.join(screenshotDirectory, "figure-2-ccc-demo.png"),
+    path.join(screenshotDirectory, "figure-3-private-balance.png"),
+    path.join(screenshotDirectory, "figure-4-developer-protocol.png"),
+    path.join(screenshotDirectory, "obscell-demo-verified-desktop.png"),
+    path.join(screenshotDirectory, "obscell-demo-verified-presentation.png"),
+    path.join(screenshotDirectory, "obscell-demo-verified-mobile.png"),
+    path.join(screenshotDirectory, "obscell-demo-verified-developer.png"),
+    path.join(screenshotDirectory, "obscell-demo-verified-protocol.png"),
+  ];
+  const report = {
+    status: "passed",
+    browser: { channel: browserChannel, version: browser.version() },
+    interactions: [
+      "privacy opt-in",
+      "shield",
+      "shared payment-app mockup state",
+      "CCC recipient validation",
+      "payment preview",
+      "mode persistence",
+      "developer view",
+      "protocol view",
+      "unshield",
+      "reset",
+      "legacy route",
+      "legacy honesty boundary",
+    ],
+    networkRequestsDuringPrivacyOperations: privacyNetworkRequests.length,
+    screenshots: screenshotPaths,
+  };
+
+  if (configuredScreenshotDirectory) {
+    const command = (args) => execFileSync("git", args, {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      windowsHide: true,
+    }).trim();
+    const fileHash = (filePath) => createHash("sha256")
+      .update(fs.readFileSync(filePath))
+      .digest("hex");
+    const manifest = {
+      schema: "obscell-demo-evidence-v1",
+      capturedAtUtc: new Date().toISOString(),
+      evidenceMode: "deterministic-local-simulation",
+      command: process.argv[2]
+        ? "pnpm --filter frontend capture:evidence"
+        : "pnpm --filter frontend test:demo with DEMO_SCREENSHOT_DIR configured",
+      gitCommit: command(["rev-parse", "HEAD"]),
+      workingTree: command(["status", "--porcelain"]) ? "dirty" : "clean",
+      browser: report.browser,
+      viewports: {
+        desktop: { width: 1440, height: 900 },
+        mobile: { width: 390, height: 844 },
+        legacy: { width: 1280, height: 720 },
       },
-      null,
-      2,
-    ),
-  );
+      networkRequestsDuringPrivacyOperations: privacyNetworkRequests.length,
+      figure5: "absent-until-corrected-v1-pudge-e2e-passes",
+      figure6: "captured-separately-by-examples/payment-app-browser-verifier",
+      files: screenshotPaths.map((filePath) => ({
+        name: path.basename(filePath),
+        bytes: fs.statSync(filePath).size,
+        sha256: fileHash(filePath),
+      })),
+    };
+    fs.writeFileSync(
+      path.join(screenshotDirectory, "manifest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+  }
+
+  console.log(JSON.stringify(report, null, 2));
 } finally {
   await browser?.close();
   await closePreviewServer(previewServer);
