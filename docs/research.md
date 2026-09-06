@@ -171,4 +171,4 @@ Corrected V1 currently has source-level and fail-closed covenant foundations but
 
 ## 22. Future V2 Work
 
-Only after V1 review and testnet evidence: arbitrary denominations, multiple assets, private-to-private transfer, multi-input/multi-output join-split, shielded change, advanced recipient privacy/stealth, decentralized service discovery, additional proof systems, mobile-specific storage/proving, governance, and mainnet readiness. These items are explicitly outside the $15,000 V1 scope.
+Only after V1 review and testnet evidence: arbitrary denominations, multiple assets, private-to-private transfer, multi-input/multi-output join-split, shielded change, advanced recipient privacy/stealth, decentralized service discovery, additional proof systems, mobile-specific storage/proving, governance, and mainnet readiness. These items are explicitly outside the currently funded V1 scope.

@@ -36,10 +36,10 @@
 | `pnpm --filter frontend test:demo` | Passed | Production build, client invariants, 12 browser interactions, desktop/mobile layout, and zero fetch/XHR requests during privacy operations |
 | `pnpm --filter obscell-payment-example test:browser` | Passed | Production build and desktop/mobile fixture verification; zero fetch/XHR data requests and zero transaction submissions |
 | Evidence hash/size validation | Passed | Every file matches its JSON manifest; Figure 5 is absent |
-| `python scripts/build-grant-proposal-docx.py` | Passed | Generated six target-only diagrams and the 13-section Word proposal; structural validation found 11 byte-identical original-color images and no Figure 5 media |
+| Local proposal generation | Passed | Generated six target-only diagrams and the 13-section Word proposal; structural validation found 11 byte-identical original-color images and no Figure 5 media |
 | Word field/layout verification | Passed | TOC and page fields updated; Word opened and repaginated the final DOCX to 26 pages with 21 tables and 11 inline images |
-| `python scripts/build-grant-proposal-docx.py --finalize-page-count 26` | Passed | Restored update-on-open and cached Word's verified 26-page total for non-Word previewers |
-| `python scripts/build-grant-proposal-docx.py --validate-only` | Passed | Final post-Word-save package passed heading, field, black hyperlink/text, white-cell/black-border table, original-image identity, and Figure 5 absence checks |
+| Local proposal field finalization | Passed | Restored update-on-open and cached Word's verified 26-page total for non-Word previewers |
+| Local proposal package validation | Passed | Final post-Word-save package passed heading, field, black hyperlink/text, white-cell/black-border table, original-image identity, and Figure 5 absence checks |
 
 The final full `pnpm test` aggregate passed with the same 24-test SDK, 20-test backend, circuit, and separate-consumer results shown above.
 
